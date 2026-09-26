@@ -1,0 +1,57 @@
+{
+  "name": "@polhem/connector",
+  "version": "0.0.1",
+  "private": true,
+  "description": "JavaScript/TypeScript connector for the Polhem JSON-RPC API, with the full encrypted payload pipeline.",
+  "license": "MIT",
+  "author": "Polhem contributors",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/polhem-dev/polhem-connector-js.git"
+  },
+  "homepage": "https://github.com/polhem-dev/polhem-connector-js#readme",
+  "bugs": {
+    "url": "https://github.com/polhem-dev/polhem-connector-js/issues"
+  },
+  "keywords": [
+    "polhem",
+    "json-rpc",
+    "api-client",
+    "connector"
+  ],
+  "type": "module",
+  "sideEffects": false,
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "require": "./dist/index.cjs"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "build": "tsup && tsc -p tsconfig.build.json",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "typecheck": "tsc --noEmit",
+    "fetch-fixtures": "node scripts/fetch-fixtures.mjs",
+    "test:wire": "npm run fetch-fixtures && vitest run --config vitest.wire.config.ts",
+    "smoke": "npm run build && node scripts/smoke.mjs",
+    "contracts:update": "node scripts/contracts.mjs",
+    "contracts:check": "node scripts/contracts.mjs --check"
+  },
+  "devDependencies": {
+    "@types/node": "^26.4.1",
+    "tsup": "^8.5.1",
+    "typescript": "^7.0.2",
+    "vitest": "^4.1.11"
+  }
+}
