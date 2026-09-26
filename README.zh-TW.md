@@ -102,7 +102,7 @@ npm run test:wire # 下載框架的 wire fixtures，再以它們驗證 codec
 ```
 
 `npm test` 完全不連網：wire 相容性以 .NET 實作產生的固定向量檢查。`npm run test:wire` 是範圍更廣的檢查——
-它下載框架公開的 wire fixtures，逐一做 round-trip。這些 fixtures **不入本 repo 的版控**；
+它下載框架公開的 wire fixtures，除了 `value-datatable` 之外的 value 樣本逐一做 round-trip；`value-datatable` 則斷言解碼 `DataTable` 會被拒絕，因為目前尚未支援。這些 fixtures **不入本 repo 的版控**；
 複製一份就成了 wire 格式的第二個權威來源，而且會漂移。
 
 ### 對真實後端測試
@@ -118,7 +118,7 @@ cd samples/QuickStart.Server && dotnet run
 npm run smoke
 ```
 
-`npm run smoke` 呼叫 `System.Ping` 兩次：一次以 Plain payload，一次經 JSON codec 編碼。重要的是第二次——
+`npm run smoke` 呼叫 `System.Ping` 三次：以 Plain payload、經 JSON codec 編碼、以及透過具型別的 `client.system.ping()`。重要的是編碼的那一次——
 body 在這裡產生、gzip，由伺服端的 `json` codec 解碼，並以同一個 codec 回應。
 
 注意單元測試**不**需要伺服端：wire 相容性以 .NET 實作產生的固定向量驗證，所以 `npm test` 可離線執行。

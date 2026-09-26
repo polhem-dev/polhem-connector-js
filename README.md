@@ -107,8 +107,9 @@ npm run test:wire # fetches the framework's wire fixtures, then verifies the cod
 
 `npm test` never touches the network: wire compatibility is checked against fixed vectors produced
 by the .NET implementation. `npm run test:wire` is the broader check — it downloads the framework's
-published wire fixtures and round-trips every one of them. Those fixtures are **not committed
-here**; a copy would be a second authority for the wire format, and it would drift.
+published wire fixtures and round-trips every value sample except `value-datatable`, where it asserts
+that decoding a `DataTable` is refused because that is not supported yet. Those fixtures are **not
+committed here**; a copy would be a second authority for the wire format, and it would drift.
 
 ### Testing against a real backend
 
@@ -123,9 +124,9 @@ cd samples/QuickStart.Server && dotnet run
 npm run smoke
 ```
 
-`npm run smoke` calls `System.Ping` twice: once as a Plain payload, once encoded through the JSON
-codec. The second is the one that matters — the body is produced here, gzipped, decoded by the
-server's `json` codec, and answered in the same codec.
+`npm run smoke` calls `System.Ping` three times: as a Plain payload, encoded through the JSON codec,
+and through the typed `client.system.ping()`. The encoded call is the one that matters — the body is
+produced here, gzipped, decoded by the server's `json` codec, and answered in the same codec.
 
 Note that the unit tests do **not** need a server: wire compatibility is verified against fixed
 vectors produced by the .NET implementation, so `npm test` runs offline.
