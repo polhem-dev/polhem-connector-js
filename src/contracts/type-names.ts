@@ -7,6 +7,8 @@
 // string and screens it against an allow-list first.
 
 export const WireTypeNames = {
+  AuditLogAggregateResponse: 'Polhem.Api.Core.Messages.AuditLog.AuditLogAggregateResponse, Polhem.Api.Core',
+  AuditLogListResponse: 'Polhem.Api.Core.Messages.AuditLog.AuditLogListResponse, Polhem.Api.Core',
   CreateApiKeyRequest: 'Polhem.Api.Core.Messages.System.CreateApiKeyRequest, Polhem.Api.Core',
   CreateApiKeyResponse: 'Polhem.Api.Core.Messages.System.CreateApiKeyResponse, Polhem.Api.Core',
   CreateSessionRequest: 'Polhem.Api.Core.Messages.System.CreateSessionRequest, Polhem.Api.Core',
@@ -53,8 +55,6 @@ export const WireTypeNames = {
   LeaveCompanyResponse: 'Polhem.Api.Core.Messages.System.LeaveCompanyResponse, Polhem.Api.Core',
   ListApiKeysRequest: 'Polhem.Api.Core.Messages.System.ListApiKeysRequest, Polhem.Api.Core',
   ListApiKeysResponse: 'Polhem.Api.Core.Messages.System.ListApiKeysResponse, Polhem.Api.Core',
-  LogAggregateResponse: 'Polhem.Api.Core.Messages.AuditLog.LogAggregateResponse, Polhem.Api.Core',
-  LogListResponse: 'Polhem.Api.Core.Messages.AuditLog.LogListResponse, Polhem.Api.Core',
   LoginRequest: 'Polhem.Api.Core.Messages.System.LoginRequest, Polhem.Api.Core',
   LoginResponse: 'Polhem.Api.Core.Messages.System.LoginResponse, Polhem.Api.Core',
   LogoutRequest: 'Polhem.Api.Core.Messages.System.LogoutRequest, Polhem.Api.Core',

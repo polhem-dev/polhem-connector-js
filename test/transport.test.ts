@@ -1,7 +1,9 @@
 import { describe, expect, it, vi } from 'vitest';
 import { JsonRpcTransport } from '../src/transport/client.js';
 import {
+  AuthenticationRequiredError,
   JsonRpcError,
+  JsonRpcErrorCode,
   PayloadFormat,
   buildPayload,
   restorePayload,
@@ -106,7 +108,7 @@ describe('JSON-RPC transport', () => {
     expect(calls[0]!.request.params.codec).toBe('json');
   });
 
-  it('sends the API key and a Bearer header, using an empty GUID before login', async () => {
+  it('sends no Authorization header before sign-in, and the Bearer token after it', async () => {
     const { fn, calls } = mockFetch((req) => ({
       jsonrpc: '2.0',
       id: req.id,
@@ -116,9 +118,10 @@ describe('JSON-RPC transport', () => {
     const client = transport(fn);
     await client.execute('System.Ping', {});
 
+    // Without a session the call is anonymous, which the server reads from the missing header.
     const headers = calls[0]!.init.headers as Record<string, string>;
     expect(headers['X-Api-Key']).toBe(API_KEY);
-    expect(headers['Authorization']).toBe('Bearer 00000000-0000-0000-0000-000000000000');
+    expect(headers).not.toHaveProperty('Authorization');
 
     client.accessToken = '11111111-2222-3333-4444-555555555555';
     await client.execute('System.Logout', {});
@@ -153,9 +156,62 @@ describe('JSON-RPC transport', () => {
     await expect(buildPayload({}, PayloadFormat.Encrypted, 'T, A')).rejects.toThrow(/key is required/);
   });
 
-  it('reports an HTTP failure with the status and body', async () => {
-    const fn = vi.fn(async () => new Response('nope', { status: 401 })) as unknown as typeof fetch;
+  it('raises AuthenticationRequiredError for -32001, so a caller can tell it to sign in again', async () => {
+    const { fn } = mockFetch((req) => ({
+      jsonrpc: '2.0',
+      id: req.id,
+      error: { code: JsonRpcErrorCode.Unauthorized, message: 'The session is invalid or has expired.' },
+    }));
 
-    await expect(transport(fn).execute('System.Ping', {})).rejects.toThrow(/HTTP 401/);
+    const error = await transport(fn).execute('System.GetFormSchema', {}).catch((e: unknown) => e);
+
+    expect(error).toBeInstanceOf(AuthenticationRequiredError);
+    expect(error).toBeInstanceOf(JsonRpcError);
+    expect(error).toMatchObject({ code: -32001, httpStatus: undefined });
+  });
+
+  it('keeps other error codes as a plain JsonRpcError', async () => {
+    const { fn } = mockFetch((req) => ({
+      jsonrpc: '2.0',
+      id: req.id,
+      error: { code: JsonRpcErrorCode.PermissionDenied, message: 'Permission denied.' },
+    }));
+
+    const error = await transport(fn).execute('Employee.GetList', {}).catch((e: unknown) => e);
+
+    expect(error).toBeInstanceOf(JsonRpcError);
+    expect(error).not.toBeInstanceOf(AuthenticationRequiredError);
+  });
+
+  it('reads the JSON-RPC error out of a rejection at the HTTP gate', async () => {
+    const fn = vi.fn(
+      async () =>
+        new Response(
+          JSON.stringify({ jsonrpc: '2.0', id: null, error: { code: -32600, message: 'Missing or invalid API key.' } }),
+          { status: 401, headers: { 'content-type': 'application/json' } },
+        ),
+    ) as unknown as typeof fetch;
+
+    const error = await transport(fn).execute('System.Login', {}).catch((e: unknown) => e);
+
+    // An API key rejection is not a sign-in problem: signing in again would be refused the same way.
+    expect(error).toBeInstanceOf(JsonRpcError);
+    expect(error).not.toBeInstanceOf(AuthenticationRequiredError);
+    expect(error).toMatchObject({ code: -32600, httpStatus: 401, message: 'Missing or invalid API key.' });
+  });
+
+  it('reports an HTTP failure without a JSON-RPC body with the status and body', async () => {
+    const fn = vi.fn(async () => new Response('nope', { status: 502 })) as unknown as typeof fetch;
+
+    await expect(transport(fn).execute('System.Ping', {})).rejects.toThrow(/HTTP 502/);
+  });
+
+  it('refuses a marked wire value in a Plain payload', async () => {
+    await expect(
+      buildPayload(
+        { filter: { kind: 'Condition', fieldName: 'amount', value: wire.decimal('1.5') } },
+        PayloadFormat.Plain,
+      ),
+    ).rejects.toThrow(/Plain payload cannot carry a marked wire value/);
   });
 });

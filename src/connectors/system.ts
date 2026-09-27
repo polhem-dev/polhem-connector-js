@@ -47,6 +47,10 @@ export class SystemConnector {
       { format: PayloadFormat.Encoded, typeName: WireTypeNames.LoginRequest },
     );
 
+    // Absent means the empty Guid on this wire, which is no session at all.
+    if (!response.accessToken) {
+      throw new Error('The login response carried no access token.');
+    }
     this.#transport.accessToken = response.accessToken;
     if (response.apiEncryptionKey) {
       this.#transport.setEncryptionKey(
