@@ -33,6 +33,21 @@ describe('API contract', () => {
     expect(typeof response.expiredAt).toBe('string');
   });
 
+  it('tells filter groups and conditions apart by kind', () => {
+    const filter: Contracts.FilterNode = {
+      kind: 'Group',
+      operator: 'And',
+      nodes: [{ kind: 'Condition', fieldName: 'sys_id', operator: 'Equal', value: [13, 'E001'] }],
+    };
+
+    expect(filter.kind).toBe('Group');
+  });
+
+  it('types dictionaries as records keyed by name', () => {
+    const response: Contracts.EnterCompanyResponse = { capabilities: { Employee: 'Read' } };
+    expect(response.capabilities?.['Employee']).toBe('Read');
+  });
+
   it('types an object-typed member as the discriminated envelope', () => {
     const value: Contracts.WireValueEnvelope = [12, '12.50'];
     expect(value?.[0]).toBe(12);

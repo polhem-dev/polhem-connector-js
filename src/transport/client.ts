@@ -1,9 +1,10 @@
 import type { Bytes } from '../crypto/bytes.js';
 import {
-  JsonRpcError,
   PayloadFormat,
   buildPayload,
   restorePayload,
+  toJsonRpcError,
+  type JsonRpcErrorBody,
   type JsonRpcRequest,
   type JsonRpcResponse,
   type PayloadFormatValue,
@@ -96,7 +97,7 @@ export class JsonRpcTransport {
     const response = await this.#post(request);
 
     if (response.error) {
-      throw new JsonRpcError(response.error.code, response.error.message, response.error.data);
+      throw toJsonRpcError(response.error);
     }
     if (!response.result) {
       throw new Error(`The response to '${method}' carried neither a result nor an error.`);
@@ -110,9 +111,13 @@ export class JsonRpcTransport {
       'Content-Type': 'application/json',
       [HEADER_API_KEY]: this.#apiKey,
     };
-    // Sent even before login: the server's HTTP gate wants the header on every method outside its
-    // own small exempt list, and rejects a malformed one.
-    headers[HEADER_AUTHORIZATION] = `Bearer ${this.#accessToken ?? EMPTY_TOKEN}`;
+    // Only with a session. A request without the header is an anonymous call, which is what a call
+    // before sign-in is; the server lets the method's own access declaration decide whether that is
+    // enough. Sending a placeholder token instead would claim a header a deployment may have chosen
+    // to require for a method (`IsAuthorizationRequired` on the server's authorization validator).
+    if (this.#accessToken) {
+      headers[HEADER_AUTHORIZATION] = `Bearer ${this.#accessToken}`;
+    }
 
     const response = await this.#fetch(this.#endpoint, {
       method: 'POST',
@@ -121,8 +126,11 @@ export class JsonRpcTransport {
     });
 
     if (!response.ok) {
-      // The server answers 401 with a JSON-RPC error body, which carries the useful part.
+      // The server rejects a request at its HTTP gate (API key, malformed Authorization header,
+      // unreadable body) with a JSON-RPC error body, which carries the useful part.
       const text = await response.text();
+      const error = parseErrorBody(text);
+      if (error) throw toJsonRpcError(error, response.status);
       throw new Error(`HTTP ${response.status} from ${this.#endpoint}: ${text.slice(0, 500)}`);
     }
 
@@ -130,11 +138,14 @@ export class JsonRpcTransport {
   }
 }
 
-/**
- * The token sent before login.
- *
- * The server's HTTP gate only checks that the Bearer value parses as a GUID; the business layer is
- * what actually validates it, and anonymous methods skip that. An empty GUID therefore gets an
- * anonymous call past the gate without pretending to be a session.
- */
-const EMPTY_TOKEN = '00000000-0000-0000-0000-000000000000';
+/** Reads the JSON-RPC error out of a non-200 response body, or null when it carries none. */
+function parseErrorBody(text: string): JsonRpcErrorBody | null {
+  try {
+    const body = JSON.parse(text) as Partial<JsonRpcResponse> | null;
+    const error = body?.error;
+    return error && typeof error.code === 'number' ? error : null;
+  } catch (e) {
+    if (e instanceof SyntaxError) return null;
+    throw e;
+  }
+}

@@ -1,7 +1,7 @@
 import { decrypt, encrypt } from '../crypto/aes-cbc-hmac.js';
 import { fromBase64, fromUtf8, toBase64, utf8, type Bytes } from '../crypto/bytes.js';
 import { gunzip, gzip } from '../crypto/gzip.js';
-import { decodeBody, encodeBody } from '../codec/json-body.js';
+import { decodeBody, encodeBody, isTaggedWireValue } from '../codec/json-body.js';
 
 /**
  * The JSON-RPC envelope and the payload pipeline inside it.
@@ -60,17 +60,73 @@ export interface JsonRpcResponse {
   id: string | null;
 }
 
+/**
+ * The JSON-RPC error codes the server sends.
+ *
+ * The authority is the framework's `JsonRpcErrorCode` enum (`src/Polhem.Api.Core/JsonRpc/` in
+ * polhem-dev/polhem), which documents when each one is raised. These values are protocol constants
+ * and are not renumbered there.
+ */
+export const JsonRpcErrorCode = {
+  ParseError: -32700,
+  InvalidRequest: -32600,
+  MethodNotFound: -32601,
+  InvalidParams: -32602,
+  InternalError: -32000,
+  /** No usable access token: none, or one that is unknown, invalid or expired. Sign in again. */
+  Unauthorized: -32001,
+  CompanyNotEntered: -32002,
+  CompanyAccessDenied: -32003,
+  PermissionDenied: -32004,
+  ReplayRejected: -32005,
+  /** A message written for the end user by business logic. */
+  UserMessage: -32099,
+} as const;
+
 /** An error returned by the server, carrying its JSON-RPC code. */
 export class JsonRpcError extends Error {
   readonly code: number;
   readonly data: unknown;
+  /**
+   * The HTTP status the error arrived with, when it was not 200. The server rejects a missing or
+   * invalid API key, or a malformed `Authorization` header, at the HTTP layer with 401; errors
+   * raised while running the method arrive with 200.
+   */
+  readonly httpStatus: number | undefined;
 
-  constructor(code: number, message: string, data?: unknown) {
+  constructor(code: number, message: string, data?: unknown, httpStatus?: number) {
     super(message);
     this.name = 'JsonRpcError';
     this.code = code;
     this.data = data;
+    this.httpStatus = httpStatus;
   }
+}
+
+/**
+ * The call needs a signed-in caller and the server has no usable session for it: the client never
+ * signed in, or its access token is unknown, invalid or expired (code
+ * {@link JsonRpcErrorCode.Unauthorized}).
+ *
+ * The remedy is to sign in again; retrying the same call will not help. The transport does not
+ * clear its session state when this is raised, because a sign-in may already have replaced the
+ * token that failed. A new `login` overwrites both the token and the session key.
+ *
+ * Distinct from {@link JsonRpcErrorCode.PermissionDenied}, where the caller is signed in but lacks
+ * the right, and from an API key rejection, which is an `InvalidRequest` at the HTTP layer.
+ */
+export class AuthenticationRequiredError extends JsonRpcError {
+  constructor(message: string, data?: unknown, httpStatus?: number) {
+    super(JsonRpcErrorCode.Unauthorized, message, data, httpStatus);
+    this.name = 'AuthenticationRequiredError';
+  }
+}
+
+/** Builds the error for a JSON-RPC error body, choosing the subclass its code calls for. */
+export function toJsonRpcError(error: JsonRpcErrorBody, httpStatus?: number): JsonRpcError {
+  return error.code === JsonRpcErrorCode.Unauthorized
+    ? new AuthenticationRequiredError(error.message, error.data, httpStatus)
+    : new JsonRpcError(error.code, error.message, error.data, httpStatus);
 }
 
 /**
@@ -91,6 +147,7 @@ export async function buildPayload(
   if (format === PayloadFormat.Plain) {
     // A Plain payload carries the object itself and needs no type name — the server resolves the
     // target type from the business object's method signature instead.
+    assertNoWireValues(value);
     return { format, value };
   }
 
@@ -108,6 +165,27 @@ export async function buildPayload(
   }
 
   return { format, codec: JSON_CODEC, type: typeName, value: toBase64(bytes) };
+}
+
+/**
+ * Refuses a marked wire value inside a Plain payload.
+ *
+ * A Plain body has no envelope: the server binds an `object`-typed member by its JSON kind (a
+ * string stays a string, a number becomes an integer or a decimal), and a JSON object has no CLR
+ * counterpart at all. A marked value would travel as `{ code, value }` and reach the data layer as
+ * something no database can bind. Typed values need the Encoded or Encrypted format, whose JSON
+ * body codec carries the discriminator.
+ */
+function assertNoWireValues(value: unknown, seen = new Set<object>()): void {
+  if (typeof value !== 'object' || value === null || seen.has(value)) return;
+  if (isTaggedWireValue(value)) {
+    throw new Error(
+      'A Plain payload cannot carry a marked wire value; the server binds Plain values by their ' +
+        'JSON kind. Use the Encoded or Encrypted format for typed values, or send the bare value.',
+    );
+  }
+  seen.add(value);
+  for (const member of Object.values(value)) assertNoWireValues(member, seen);
 }
 
 /**

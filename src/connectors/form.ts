@@ -30,8 +30,10 @@ export class FormConnector {
   /**
    * Queries rows.
    *
-   * A filter's condition values are `object`-typed on the server, so mark them with the `wire`
-   * helpers — an unmarked decimal arrives as a string and an unmarked Guid as plain text.
+   * A filter is a tree of `FilterGroup` and `FilterCondition` nodes, told apart by `kind`. A
+   * condition's values are `object`-typed on the server, so mark them with the `wire` helpers — an
+   * unmarked decimal arrives as a string and an unmarked Guid as plain text. Marked values need an
+   * encoded or encrypted call, which is the default once signed in; a Plain call refuses them.
    */
   async getList(request: Contracts.GetListRequest = {}): Promise<Contracts.GetListResponse> {
     return this.#call<Contracts.GetListResponse>('GetList', request, WireTypeNames.GetListRequest);

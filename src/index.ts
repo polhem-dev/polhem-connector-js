@@ -30,8 +30,10 @@ export type { TaggedWireValue, WireValue, WireValueCodeValue } from './codec/wir
 
 export { encodeBody, decodeBody } from './codec/json-body.js';
 export {
+  AuthenticationRequiredError,
   JSON_CODEC,
   JsonRpcError,
+  JsonRpcErrorCode,
   PayloadFormat,
   buildPayload,
   restorePayload,

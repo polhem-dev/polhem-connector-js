@@ -13,6 +13,8 @@ jobs:
       matrix:
         # 20 is the oldest line still receiving security updates; 22 is current LTS.
         # Both carry Web Crypto and the compression streams this package builds on.
+        # IMPORTANT: branch protection requires each job by name (`build (20)`, `build (22)`).
+        # Changing this list means changing the protection too: docs/repo-ops/branch-protection.md.
         node: [20, 22]
 
     steps:

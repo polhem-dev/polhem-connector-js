@@ -76,8 +76,8 @@ const employees = await client.form('Employee').getList({ selectFields: 'sys_id,
 await client.system.logout();
 ```
 
-filter 裡的值在伺服端是 `object` 型別，所以 JavaScript 分辨不出來的值要加上標記——沒標記的 decimal
-會以字串抵達：
+filter 是由 `FilterGroup` 與 `FilterCondition` 節點組成的樹，以 `kind` 區分。condition 裡的值在伺服端是
+`object` 型別，所以 JavaScript 分辨不出來的值要加上標記——沒標記的 decimal 會以字串抵達：
 
 ```ts
 import { wire } from '@polhem/connector';
@@ -91,6 +91,46 @@ await client.form('Employee').getList({
 });
 ```
 
+加上標記的值以 JSON body codec 的區分式封套傳送，因此必須是 Encoded 或 Encrypted 的呼叫——`login` 之後的每個呼叫
+都是。Plain 呼叫會拒絕它們：伺服端只依 JSON 種類綁定 Plain 的值，所以 Guid 或日期在那裡仍是字串，數字會成為整數或
+decimal，沒有辦法另外指定。
+
+所有訊息型別都以 `Contracts` 匯出（`Contracts.GetListRequest`…），由框架產生。選填成員在 wire 上可能不出現，
+不出現即代表 .NET 的預設值（`0`、`false`、列舉的第一個成員、空 Guid）。
+
+### Session 與錯誤
+
+`login` 之前，客戶端不送 `Authorization` header，伺服端將其視為匿名呼叫；是否足夠由該方法自身的存取宣告決定。
+`login` 之後每個呼叫都帶 `Bearer <access token>`，`logout` 會清除 token 與 session 金鑰。
+
+伺服端的錯誤以帶有 JSON-RPC `code` 的 `JsonRpcError` 擲出（各值見 `JsonRpcErrorCode`）。當需要登入的呼叫在伺服端
+找不到可用的 session（客戶端從未登入，或 token 已過期或被撤銷）時，錯誤是 `AuthenticationRequiredError`
+（code `-32001`）。重試沒有用，請重新登入：
+
+```ts
+import { AuthenticationRequiredError } from '@polhem/connector';
+
+try {
+  await client.form('Employee').getList();
+} catch (error) {
+  if (error instanceof AuthenticationRequiredError) {
+    await client.system.login(userId, password); // replaces the token and the session key
+  } else {
+    throw error;
+  }
+}
+```
+
+在伺服端 HTTP 閘門被拒絕（API key 缺少或無效、`Authorization` header 格式錯誤）也是 `JsonRpcError`，
+其 `httpStatus` 為回應的 HTTP 狀態碼。它不是 `AuthenticationRequiredError`：重新登入也會以同樣方式被拒絕。
+
+### 尚未支援：防重放 frame
+
+部署可以要求每個 Encoded 與 Encrypted payload 內都帶防重放 frame（框架的 `ApiServiceOptions.RequireWireFrame`，
+預設關閉）。本客戶端目前既不寫入也不讀取這個 frame，因此在這類部署上，它的 Encoded 與 Encrypted 呼叫（包括 `login`）
+會以 `-32005`（`JsonRpcErrorCode.ReplayRejected`）被拒絕，直到支援 frame 為止。Plain 呼叫不受影響。
+與本客戶端連線的部署請保持這個開關關閉。
+
 ## 開發
 
 ```sh
@@ -99,7 +139,10 @@ npm test          # vitest，離線
 npm run typecheck # tsc --noEmit
 npm run build     # tsup（JS）+ tsc（宣告檔）
 npm run test:wire # 下載框架的 wire fixtures，再以它們驗證 codec
+npm run contracts:check  # 同步進來的 API 合約仍與框架一致
 ```
+
+變更如何進入 `main`、框架合約變動時該怎麼做，見 [CONTRIBUTING.zh-TW.md](CONTRIBUTING.zh-TW.md)。
 
 `npm test` 完全不連網：wire 相容性以 .NET 實作產生的固定向量檢查。`npm run test:wire` 是範圍更廣的檢查——
 它下載框架公開的 wire fixtures，除了 `value-datatable` 之外的 value 樣本逐一做 round-trip；`value-datatable` 則斷言解碼 `DataTable` 會被拒絕，因為目前尚未支援。這些 fixtures **不入本 repo 的版控**；
@@ -112,14 +155,16 @@ repo 的 quick-start host：
 
 ```sh
 # 終端機 1 — 在 polhem 的 checkout 裡
-cd samples/QuickStart.Server && dotnet run
+dotnet run --project samples/QuickStart.Server
 
 # 終端機 2 — 在這裡
 npm run smoke
 ```
 
-`npm run smoke` 呼叫 `System.Ping` 三次：以 Plain payload、經 JSON codec 編碼、以及透過具型別的 `client.system.ping()`。重要的是編碼的那一次——
-body 在這裡產生、gzip，由伺服端的 `json` codec 解碼，並以同一個 codec 回應。
+`npm run smoke` 先呼叫 `System.Ping`：以 Plain payload、經 JSON codec 編碼、以及透過具型別的
+`client.system.ping()`。接著確認登入前的需驗證呼叫會以 `AuthenticationRequiredError` 失敗，以範例的
+`demo` / `demo` 使用者登入（RSA 交握），透過**加密**呼叫讀取表單 schema，登出，並確認舊 token 會被拒絕。
+指向其他 host 的環境變數列在 `scripts/smoke.mjs` 開頭。
 
 注意單元測試**不**需要伺服端：wire 相容性以 .NET 實作產生的固定向量驗證，所以 `npm test` 可離線執行。
 

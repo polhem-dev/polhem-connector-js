@@ -11,7 +11,8 @@ import { encodeWireValue, type TaggedWireValue } from './wire-value.js';
  * is what System.Text.Json expects for a typed property.
  */
 
-function isTagged(value: unknown): value is TaggedWireValue {
+/** Whether a value was marked with the `wire` helpers or `tag`. */
+export function isTaggedWireValue(value: unknown): value is TaggedWireValue {
   return (
     typeof value === 'object' &&
     value !== null &&
@@ -34,7 +35,7 @@ export function encodeBody(value: unknown): string {
     // what a typed DateTime property should be. The raw value is needed for the rest.
     const raw = this[key];
 
-    if (isTagged(raw)) return encodeWireValue(raw);
+    if (isTaggedWireValue(raw)) return encodeWireValue(raw);
     if (raw instanceof Uint8Array) return toBase64(raw as Bytes);
     if (typeof raw === 'bigint') {
       // A typed 64-bit property is a JSON number to System.Text.Json. Values past 2^53 cannot

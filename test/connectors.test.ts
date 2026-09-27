@@ -140,6 +140,20 @@ describe('connectors', () => {
     expect(calls[1]!.params.format).toBe(PayloadFormat.Encrypted);
   });
 
+  it('refuses a login response without an access token rather than signing in anonymously', async () => {
+    const { fn } = mockFetch(async (req) => ({
+      jsonrpc: '2.0',
+      id: req.id,
+      // The wire leaves out an empty Guid, so a missing token is the server saying "no session".
+      result: await buildPayload({}, PayloadFormat.Encoded, WireTypeNames.LoginResponse),
+    }));
+
+    const client = clientWith(fn);
+
+    await expect(client.system.login('demo', 'secret')).rejects.toThrow(/no access token/);
+    expect(client.transport.accessToken).toBeNull();
+  });
+
   it('clears the session on logout even when the call fails', async () => {
     const { fn } = mockFetch((req) => ({
       jsonrpc: '2.0',
