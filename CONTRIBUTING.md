@@ -43,9 +43,11 @@ These are the steps CI runs, in the same order (see [`.github/workflows/ci.yml`]
 
 ## When the framework's wire contract changes
 
-`src/contracts/` is generated in the framework repository and synced here. Do not edit it by hand:
+`src/contracts/` and the wire fixtures come from one framework release, the tag in
+[`scripts/framework-ref.mjs`](scripts/framework-ref.mjs). A wire change on the framework's `main` does not reach
+this repository until the framework releases it. When it does:
 
-1. Run `npm run contracts:update`.
+1. Change `FRAMEWORK_REF` to the new tag and run `npm run contracts:update`. Do not edit `src/contracts/` by hand.
 2. Read the diff. A renamed or removed property, or a member that became optional, is a breaking change for callers
    of this package.
 3. Adapt the code and the tests until the checks above pass, and update the README if behaviour changed.
