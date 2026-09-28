@@ -39,9 +39,11 @@ npm run test:wire         # 下載框架的 wire fixtures，並以它們驗證�
 
 ## 框架的 wire 合約變更時
 
-`src/contracts/` 由框架 repository 產生後同步到這裡，不要手動編輯：
+`src/contracts/` 與 wire fixtures 都取自框架的同一個發佈版本，也就是
+[`scripts/framework-ref.mjs`](scripts/framework-ref.mjs) 裡的 tag。框架 `main` 上的 wire 變更，要等框架發佈之後才會影響這個
+repository。發佈之後：
 
-1. 執行 `npm run contracts:update`。
+1. 把 `FRAMEWORK_REF` 改為新的 tag，執行 `npm run contracts:update`。不要手動編輯 `src/contracts/`。
 2. 閱讀 diff。屬性改名或移除、或成員變成選填，對這個套件的呼叫端都是破壞性變更。
 3. 調整程式碼與測試直到上述檢查通過；行為有變時一併更新 README。
 

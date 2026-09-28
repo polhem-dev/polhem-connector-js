@@ -8,13 +8,17 @@
  *
  *   node scripts/contracts.mjs           # update the committed copy
  *   node scripts/contracts.mjs --check   # fail if it differs from the source
+ *
+ * The framework ref comes from `framework-ref.mjs`; `POLHEM_CONTRACTS_REF` overrides it for a
+ * one-off run.
  */
 import { readFile, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { FRAMEWORK_REF } from './framework-ref.mjs';
 
 const REPO = 'polhem-dev/polhem';
-const REF = process.env.POLHEM_CONTRACTS_REF ?? 'main';
+const REF = process.env.POLHEM_CONTRACTS_REF ?? FRAMEWORK_REF;
 
 const outDir = join(dirname(fileURLToPath(import.meta.url)), '..', 'src', 'contracts');
 

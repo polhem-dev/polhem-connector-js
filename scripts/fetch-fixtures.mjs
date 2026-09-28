@@ -5,15 +5,16 @@
  * nothing to catch it — which is the exact failure the fixtures exist to prevent. Fetching them
  * keeps one authority for the wire format.
  *
- * Pinned to `main` for now; this moves to a release tag once the framework cuts one, so a given
- * version of this package states which wire it was verified against.
+ * The framework ref comes from `framework-ref.mjs`; `POLHEM_FIXTURES_REF` overrides it for a
+ * one-off run.
  */
 import { mkdir, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { FRAMEWORK_REF } from './framework-ref.mjs';
 
 const REPO = 'polhem-dev/polhem';
-const REF = process.env.POLHEM_FIXTURES_REF ?? 'main';
+const REF = process.env.POLHEM_FIXTURES_REF ?? FRAMEWORK_REF;
 const SOURCE = 'wire-fixtures/bodies';
 
 const outDir = join(dirname(fileURLToPath(import.meta.url)), '..', 'test', 'fixtures');
