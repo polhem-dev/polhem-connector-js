@@ -54,7 +54,6 @@ export interface JsonRpcErrorBody {
 
 export interface JsonRpcResponse {
   jsonrpc: string;
-  method?: string;
   result?: ApiPayload;
   error?: JsonRpcErrorBody;
   id: string | null;
@@ -64,15 +63,16 @@ export interface JsonRpcResponse {
  * The JSON-RPC error codes the server sends.
  *
  * The authority is the framework's `JsonRpcErrorCode` enum (`src/Polhem.Api.Core/JsonRpc/` in
- * polhem-dev/polhem), which documents when each one is raised. These values are protocol constants
- * and are not renumbered there.
+ * polhem-dev/polhem), which documents when each one is raised. Framework 1.2.0 renumbered
+ * `InternalError` from -32000 to -32603, the code JSON-RPC 2.0 defines, so a change there is possible
+ * and must be followed here (see ADR-049 in that repository).
  */
 export const JsonRpcErrorCode = {
   ParseError: -32700,
   InvalidRequest: -32600,
   MethodNotFound: -32601,
   InvalidParams: -32602,
-  InternalError: -32000,
+  InternalError: -32603,
   /** No usable access token: none, or one that is unknown, invalid or expired. Sign in again. */
   Unauthorized: -32001,
   CompanyNotEntered: -32002,
@@ -88,9 +88,9 @@ export class JsonRpcError extends Error {
   readonly code: number;
   readonly data: unknown;
   /**
-   * The HTTP status the error arrived with, when it was not 200. The server rejects a missing or
-   * invalid API key, or a malformed `Authorization` header, at the HTTP layer with 401; errors
-   * raised while running the method arrive with 200.
+   * The HTTP status the error arrived with, when it was not 200. From framework 1.2.0 every
+   * JSON-RPC error arrives with 200, a rejected API key included, so this is set only by a server
+   * that answers otherwise, such as an older framework or a proxy in front of it.
    */
   readonly httpStatus: number | undefined;
 

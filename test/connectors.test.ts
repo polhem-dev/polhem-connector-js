@@ -158,7 +158,7 @@ describe('connectors', () => {
     const { fn } = mockFetch((req) => ({
       jsonrpc: '2.0',
       id: req.id,
-      error: { code: -32000, message: 'session already gone' },
+      error: { code: -32603, message: 'session already gone' },
     }));
 
     const client = clientWith(fn);
