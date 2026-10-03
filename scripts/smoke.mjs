@@ -12,6 +12,8 @@
  */
 import {
   AuthenticationRequiredError,
+  JsonRpcError,
+  JsonRpcErrorCode,
   JsonRpcTransport,
   PayloadFormat,
   PolhemClient,
@@ -77,6 +79,29 @@ if (typeof schema.xml !== 'string' || !schema.xml.includes('<FormSchema')) {
   throw new Error(`getFormSchema: expected a FormSchema XML string, got ${JSON.stringify(schema).slice(0, 200)}`);
 }
 console.log(`✓ Encrypted getFormSchema('${PROG_ID}') — ${schema.xml.length} characters of XML`);
+
+// A progId with no stored schema must come back as a message for the caller, not as a server error.
+const missingProgId = `NoSuchForm${crypto.randomUUID().replaceAll('-', '')}`;
+try {
+  await client.system.getFormSchema(missingProgId);
+  throw new Error(`getFormSchema('${missingProgId}'): expected a JsonRpcError, got a result`);
+} catch (error) {
+  if (!(error instanceof JsonRpcError)) throw error;
+  if (error.code === JsonRpcErrorCode.InternalError) {
+    throw new Error(
+      `getFormSchema of a missing progId: the server answered InternalError (${error.code}). ` +
+        'Servers built before polhem-dev/polhem#51 report a missing definition that way.',
+    );
+  }
+  const expected = `FormSchema '${missingProgId}' not found.`;
+  if (error.code !== JsonRpcErrorCode.UserMessage || error.message !== expected) {
+    throw new Error(
+      `getFormSchema of a missing progId: expected UserMessage (${JsonRpcErrorCode.UserMessage}) "${expected}", ` +
+        `got ${error.code} "${error.message}"`,
+    );
+  }
+  console.log(`✓ Missing definition — UserMessage (${error.code}): ${error.message}`);
+}
 
 await client.system.logout();
 

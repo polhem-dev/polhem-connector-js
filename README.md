@@ -178,8 +178,8 @@ npm run smoke
 `npm run smoke` first calls `System.Ping` as a Plain payload, encoded through the JSON codec, and
 through the typed `client.system.ping()`. It then checks that an authenticated call before sign-in
 fails with `AuthenticationRequiredError`, signs in as the sample's `demo` / `demo` user (the RSA
-handshake), reads a form schema over an **encrypted** call, signs out, and checks that the old token
-is refused. Environment variables for another host are listed at the top of `scripts/smoke.mjs`.
+handshake), reads a form schema over an **encrypted** call, checks that a progId with no schema is
+answered with a `UserMessage` error naming it, signs out, and checks that the old token is refused. Environment variables for another host are listed at the top of `scripts/smoke.mjs`.
 
 Note that the unit tests do **not** need a server: wire compatibility is verified against fixed
 vectors produced by the .NET implementation, so `npm test` runs offline.

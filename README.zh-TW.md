@@ -163,7 +163,8 @@ npm run smoke
 
 `npm run smoke` 先呼叫 `System.Ping`：以 Plain payload、經 JSON codec 編碼、以及透過具型別的
 `client.system.ping()`。接著確認登入前的需驗證呼叫會以 `AuthenticationRequiredError` 失敗，以範例的
-`demo` / `demo` 使用者登入（RSA 交握），透過**加密**呼叫讀取表單 schema，登出，並確認舊 token 會被拒絕。
+`demo` / `demo` 使用者登入（RSA 交握），透過**加密**呼叫讀取表單 schema，確認讀取不存在的 progId
+會收到指名該 progId 的 `UserMessage` 錯誤，登出，並確認舊 token 會被拒絕。
 指向其他 host 的環境變數列在 `scripts/smoke.mjs` 開頭。
 
 注意單元測試**不**需要伺服端：wire 相容性以 .NET 實作產生的固定向量驗證，所以 `npm test` 可離線執行。
