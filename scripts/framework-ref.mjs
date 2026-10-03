@@ -9,4 +9,4 @@
  * When the framework releases a new version, change this to the new tag, then follow
  * "When the framework's wire contract changes" in CONTRIBUTING.md.
  */
-export const FRAMEWORK_REF = 'v1.0.0';
+export const FRAMEWORK_REF = 'v1.2.0';
