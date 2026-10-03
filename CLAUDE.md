@@ -4,6 +4,12 @@ The TypeScript client for the [Polhem](https://github.com/polhem-dev/polhem) JSO
 the pull request workflow and the language policy are in `CONTRIBUTING.md`; follow them. Everything here is written
 in English.
 
+## Workflow
+
+- How changes reach `main`, and who merges them, is the polhem-dev organization's contributing guide,
+  <https://github.com/polhem-dev/.github/blob/main/CONTRIBUTING.md>: contributors work from a fork and open a pull
+  request, and only the maintainer merges. `main` is protected, so nothing is pushed to it directly.
+
 ## What an agent gets wrong here
 
 - **The server is the authority for the wire.** `src/contracts/` is synced from the framework release named in
