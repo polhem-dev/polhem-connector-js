@@ -2,23 +2,10 @@
 
 [English](CONTRIBUTING.md) | **繁體中文**
 
-感謝你對 Polhem TypeScript 連接器的關注。本文說明變更如何進入這個 repository，以及需要遵循的慣例。
+變更如何進入這個 repository、由誰合併，寫在
+[polhem-dev 組織的貢獻指南](https://github.com/polhem-dev/.github/blob/main/CONTRIBUTING.md)（英文）。本頁補充這個 TypeScript 連接器特有的事項。
 
-## 開始之前
-
-- 修正 bug 或小幅改進，直接開 pull request 即可。
-- 較大的變更（新增連接器方法、變更公開 API、新增相依套件），請先開 issue，先把做法談定再投入時間。
-- 這個套件連線的伺服器是 [polhem](https://github.com/polhem-dev/polhem)。wire 格式與 API 合約定義在那裡，不在這裡。
-
-## 工作流程
-
-1. 從最新的 `main` fork，或在有寫入權限時建立分支。
-2. 完成變更，並附上測試。
-3. 執行下方的檢查。
-4. 對 `main` 開 pull request。
-
-`main` 只接受透過 pull request 進來的變更。CI 建置必須在矩陣中的每個 Node 版本都通過，pull request 才能合併；
-審查會送給 [`.github/CODEOWNERS`](.github/CODEOWNERS) 列出的程式碼擁有者。
+這個套件連線的伺服器是 [polhem](https://github.com/polhem-dev/polhem)。wire 格式與 API 合約定義在那裡，不在這裡。
 
 ## 建置與測試
 

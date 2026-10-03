@@ -2,27 +2,12 @@
 
 **English** | [繁體中文](CONTRIBUTING.zh-TW.md)
 
-Thank you for your interest in the Polhem TypeScript connector. This guide describes how changes reach the
-repository and the conventions they follow.
+How changes reach the repository, and who merges them, is in the
+[contributing guide of the polhem-dev organization](https://github.com/polhem-dev/.github/blob/main/CONTRIBUTING.md).
+This page adds what is specific to the TypeScript connector.
 
-## Before you start
-
-- For a bug fix or a small improvement, open a pull request directly.
-- For a larger change (a new connector method, a change to the public API, a new dependency), open an issue first
-  so the approach can be agreed on before you spend time on it.
-- The server this package talks to is [polhem](https://github.com/polhem-dev/polhem). The wire format and the API
-  contract are defined there, not here.
-
-## Workflow
-
-1. Fork the repository, or create a branch if you have write access, from the latest `main`.
-2. Make the change, with tests.
-3. Run the checks below.
-4. Open a pull request against `main`.
-
-`main` only accepts changes through pull requests. The CI build must pass on every Node version in its matrix before
-a pull request can merge, and review is requested from the code owners listed in
-[`.github/CODEOWNERS`](.github/CODEOWNERS).
+The server this package talks to is [polhem](https://github.com/polhem-dev/polhem). The wire format and the API
+contract are defined there, not here.
 
 ## Build and test
 
