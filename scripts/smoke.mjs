@@ -22,7 +22,7 @@ const ENDPOINT = process.env.POLHEM_ENDPOINT ?? 'http://localhost:5050/api';
 const API_KEY = process.env.POLHEM_API_KEY ?? 'quickstart-demo';
 const USER = process.env.POLHEM_USER ?? 'demo';
 const PASSWORD = process.env.POLHEM_PASSWORD ?? 'demo';
-const PROG_ID = process.env.POLHEM_PROG_ID ?? 'Employee';
+const PROG_ID = process.env.POLHEM_PROG_ID ?? 'Staff';
 
 function checkPing(label, result) {
   if (result?.status !== 'ok') {
