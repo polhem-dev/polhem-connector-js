@@ -108,6 +108,13 @@ describe('AES-CBC-HMAC', () => {
     await expect(decrypt(cipher, combinedKey, requestAd)).rejects.toThrow();
   });
 
+  it('refuses a missing binding from a caller the type checker did not see', async () => {
+    const cipher = await encrypt(utf8(PLAIN), combinedKey, requestAd);
+    const untyped = undefined as unknown as Uint8Array<ArrayBuffer>;
+    await expect(encrypt(utf8(PLAIN), combinedKey, untyped)).rejects.toThrow(/Associated data is required/);
+    await expect(decrypt(cipher, combinedKey, untyped)).rejects.toThrow(/Associated data is required/);
+  });
+
   it('rejects a combined key of the wrong size', async () => {
     await expect(encrypt(utf8('x'), new Uint8Array(32), requestAd)).rejects.toThrow(/64 bytes/);
   });

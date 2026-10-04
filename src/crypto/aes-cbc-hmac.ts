@@ -41,6 +41,13 @@ function splitKey(combinedKey: Bytes): { aesKey: Bytes; hmacKey: Bytes } {
   };
 }
 
+/** Refuses a missing binding from a caller the type checker did not see, such as plain JavaScript. */
+function assertAssociatedData(associatedData: Bytes): void {
+  if (!(associatedData instanceof Uint8Array)) {
+    throw new Error('Associated data is required.');
+  }
+}
+
 async function importAesKey(raw: Bytes, usage: KeyUsage): Promise<CryptoKey> {
   return crypto.subtle.importKey('raw', raw, { name: 'AES-CBC' }, false, [usage]);
 }
@@ -62,6 +69,7 @@ export async function encrypt(
   combinedKey: Bytes,
   associatedData: Bytes,
 ): Promise<Bytes> {
+  assertAssociatedData(associatedData);
   const { aesKey, hmacKey } = splitKey(combinedKey);
   const iv = crypto.getRandomValues(new Uint8Array(IV_LENGTH));
 
@@ -93,6 +101,7 @@ export async function decrypt(
   combinedKey: Bytes,
   associatedData: Bytes,
 ): Promise<Bytes> {
+  assertAssociatedData(associatedData);
   if (payload.length < MIN_LENGTH) {
     throw new Error('Invalid encrypted data.');
   }
