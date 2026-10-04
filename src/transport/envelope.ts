@@ -70,6 +70,12 @@ function bindingBytes(binding: PayloadBinding | undefined): Bytes {
   return concat(Uint8Array.of(direction), utf8(binding.method));
 }
 
+function isPayloadFormat(value: unknown): value is PayloadFormatValue {
+  return (
+    value === PayloadFormat.Plain || value === PayloadFormat.Encoded || value === PayloadFormat.Encrypted
+  );
+}
+
 /** A JSON-RPC payload: the `params` of a request, or the `result` of a response. */
 export interface ApiPayload {
   format: PayloadFormatValue;
@@ -257,17 +263,18 @@ export async function restorePayload(
   encryptionKey?: Bytes,
   binding?: PayloadBinding,
 ): Promise<unknown> {
+  // Checked before it is used, and never echoed: a caller still on the old signature passes the
+  // session key here, and an error message must not carry it.
+  if (!isPayloadFormat(format)) {
+    throw new Error('The expected payload format must be 0, 1 or 2.');
+  }
   if (typeof payload !== 'object' || payload === null || Array.isArray(payload)) {
     throw new Error('The payload is not a JSON object.');
   }
 
-  // An absent format is Plain, as the .NET reader takes it.
-  const received: unknown = payload.format ?? PayloadFormat.Plain;
-  if (
-    received !== PayloadFormat.Plain &&
-    received !== PayloadFormat.Encoded &&
-    received !== PayloadFormat.Encrypted
-  ) {
+  // An absent format is Plain, as the .NET reader takes it; a null one is not a format.
+  const received: unknown = 'format' in payload ? payload.format : PayloadFormat.Plain;
+  if (!isPayloadFormat(received)) {
     throw new Error('The payload names an unknown format.');
   }
   if (received !== format) {

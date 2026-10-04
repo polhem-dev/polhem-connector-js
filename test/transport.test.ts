@@ -239,14 +239,33 @@ describe('JSON-RPC transport', () => {
       await expect(answer(PayloadFormat.Plain, () => ({ format: 0, value: null }))).resolves.toBeNull();
     });
 
-    it.each([['the string "2"', '2'], ['3', 3], ['1.5', 1.5], ['null', null]])(
+    it.each([['the string "2"', '2'], ['3', 3], ['1.5', 1.5], ['null', null], ['true', true]])(
       'refuses a format of %s',
       async (_name, format) => {
         await expect(
           answer(PayloadFormat.Encrypted, async () => ({ ...(await sealed(NO_BYTES, '')), format })),
-        ).rejects.toThrow(/unknown format|but format 2 was expected/);
+        ).rejects.toThrow(/unknown format/);
       },
     );
+
+    it('refuses a null format on a plain call rather than reading it as plain', async () => {
+      await expect(answer(PayloadFormat.Plain, () => ({ format: null, value: 1 }))).rejects.toThrow(
+        /unknown format/,
+      );
+    });
+
+    it('refuses an expected format that is not one, without echoing it', async () => {
+      // A caller still on the old signature passes the session key where the format now goes.
+      const result = await buildPayload({}, PayloadFormat.Encrypted, 'T, A', sessionKey, response);
+      const error = await restorePayload(
+        result,
+        sessionKey as unknown as PayloadFormatValue,
+        sessionKey,
+        response,
+      ).catch((e: unknown) => e);
+      expect(error).toBeInstanceOf(Error);
+      expect((error as Error).message).toBe('The expected payload format must be 0, 1 or 2.');
+    });
 
     it.each([['an array', []], ['a string', 'AAAA'], ['a number', 2]])(
       'refuses a result that is %s',
