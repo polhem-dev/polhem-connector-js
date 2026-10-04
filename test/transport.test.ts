@@ -357,6 +357,13 @@ describe('JSON-RPC transport', () => {
         );
       });
 
+      it('reads a body that only partly matches the gzip header as uncompressed', async () => {
+        // Both go to the codec as they are and fail there as JSON, rather than in gunzip.
+        for (const body of [Uint8Array.of(0x1f), Uint8Array.of(0x1f, 0x00, 0x7b, 0x7d)]) {
+          await expect(answer(PayloadFormat.Encoded, () => encoded(body))).rejects.toThrow(SyntaxError);
+        }
+      });
+
       it('refuses a body that starts with the gzip header but is not valid gzip', async () => {
         const valid = await gzip(utf8(encodeBody({ ok: true })));
         const truncated = valid.slice(0, valid.length - 4);
