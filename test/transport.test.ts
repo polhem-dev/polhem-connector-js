@@ -15,7 +15,7 @@ import {
 } from '../src/transport/envelope.js';
 import { encrypt } from '../src/crypto/aes-cbc-hmac.js';
 import { concat, fromBase64, toBase64, utf8 } from '../src/crypto/bytes.js';
-import { gzip } from '../src/crypto/gzip.js';
+import { MAX_DECOMPRESSED_LENGTH, gzip } from '../src/crypto/gzip.js';
 import { encodeBody } from '../src/codec/json-body.js';
 import { wire } from '../src/codec/wire-value.js';
 
@@ -302,6 +302,19 @@ describe('JSON-RPC transport', () => {
       await expect(answer(PayloadFormat.Encoded, () => encoded(NO_BYTES))).resolves.toBeNull();
       const empty = await gzip(NO_BYTES);
       await expect(answer(PayloadFormat.Encoded, () => encoded(empty))).resolves.toBeNull();
+    });
+
+    it('reads an encoded null result whatever its codec, as .NET does', async () => {
+      const result = { format: PayloadFormat.Encoded, type: '', codec: 'messagepack', value: '' };
+      await expect(answer(PayloadFormat.Encoded, () => result)).resolves.toBeNull();
+    });
+
+    it('refuses a body that decompresses past the limit, with or without a type', async () => {
+      const bomb = toBase64(await gzip(new Uint8Array(MAX_DECOMPRESSED_LENGTH + 1)));
+      for (const type of ['T, A', '']) {
+        const result = { format: PayloadFormat.Encoded, codec: 'json', type, value: bomb };
+        await expect(answer(PayloadFormat.Encoded, () => result)).rejects.toThrow(/decompresses to more than/);
+      }
     });
 
     it('refuses an encrypted null result that does not pass its HMAC', async () => {

@@ -7,7 +7,7 @@
  */
 
 export { decrypt, encrypt } from './crypto/aes-cbc-hmac.js';
-export { gunzip, gzip } from './crypto/gzip.js';
+export { MAX_DECOMPRESSED_LENGTH, gunzip, gzip } from './crypto/gzip.js';
 export {
   decryptSessionKey,
   decryptWithPrivateKey,

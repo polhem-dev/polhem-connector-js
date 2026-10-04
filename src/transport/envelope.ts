@@ -290,12 +290,6 @@ export async function restorePayload(
     throw new Error('The payload type must be a string.');
   }
 
-  if (payload.codec && payload.codec !== JSON_CODEC) {
-    throw new Error(
-      `The server answered with the '${payload.codec}' codec, which this package cannot read.`,
-    );
-  }
-
   if (typeof payload.value !== 'string') {
     throw new Error('An encoded payload must carry its body as a Base64 string.');
   }
@@ -310,11 +304,18 @@ export async function restorePayload(
 
   if (!type) {
     // The server writes a null result as zero bytes, uncompressed; gzip of nothing is read the same
-    // way. Zero bytes are not valid gzip, so they are accepted before decompressing.
+    // way. Zero bytes are not valid gzip, so they are accepted before decompressing. An empty body
+    // reads the same whatever the codec, so the codec is not checked here, as on .NET.
     if (bytes.length === 0 || (await gunzip(bytes)).length === 0) {
       return null;
     }
     throw new Error('A payload that names no type must have an empty body.');
+  }
+
+  if (payload.codec && payload.codec !== JSON_CODEC) {
+    throw new Error(
+      `The server answered with the '${payload.codec}' codec, which this package cannot read.`,
+    );
   }
 
   return decodeBody(fromUtf8(await gunzip(bytes)));

@@ -169,6 +169,9 @@ written one; `restorePayload` therefore takes the format it expects as its secon
 result comes back in the request's format too, naming no type and with an empty body, and reads as
 `null` only once an encrypted one has passed its HMAC.
 
+A payload is decompressed with a limit, `MAX_DECOMPRESSED_LENGTH` (the default of the framework's
+`GzipPayloadCompressor`), and refused as soon as its output passes it.
+
 ### Not supported yet: replay-protection frames
 
 A deployment can require an anti-replay frame inside every Encoded and Encrypted payload
