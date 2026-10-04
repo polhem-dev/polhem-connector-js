@@ -274,6 +274,11 @@ describe('JSON-RPC transport', () => {
       },
     );
 
+    it('refuses a codec that is not a string, even on a null result', async () => {
+      const result = { format: PayloadFormat.Encoded, type: '', codec: 123, value: '' };
+      await expect(answer(PayloadFormat.Encoded, () => result)).rejects.toThrow(/codec must be a string/);
+    });
+
     it('refuses a type that is not a string', async () => {
       await expect(answer(PayloadFormat.Encrypted, () => sealed(NO_BYTES, 42))).rejects.toThrow(
         /type must be a string/,

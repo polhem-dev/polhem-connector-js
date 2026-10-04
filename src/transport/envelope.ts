@@ -290,6 +290,11 @@ export async function restorePayload(
     throw new Error('The payload type must be a string.');
   }
 
+  const codec: unknown = payload.codec;
+  if (codec !== undefined && codec !== null && typeof codec !== 'string') {
+    throw new Error('The payload codec must be a string.');
+  }
+
   if (typeof payload.value !== 'string') {
     throw new Error('An encoded payload must carry its body as a Base64 string.');
   }
