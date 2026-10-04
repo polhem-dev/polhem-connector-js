@@ -322,6 +322,53 @@ describe('JSON-RPC transport', () => {
       }
     });
 
+    describe('uncompressed body', () => {
+      /** An encoded result whose body is `body` exactly, with no compression. */
+      const encoded = (body: Uint8Array<ArrayBuffer>, type = 'T, A') => ({
+        format: PayloadFormat.Encoded,
+        codec: 'json',
+        type,
+        value: toBase64(body),
+      });
+
+      it('reads an uncompressed encoded result, as the framework reads one', async () => {
+        // The body of `PayloadProcessorTests.OpenRequest_UncompressedEncodedBody_Opens` in polhem-jsonrpc.
+        const body = utf8('{"clientName":"a","traceId":"b"}');
+        await expect(answer(PayloadFormat.Encoded, () => encoded(body))).resolves.toEqual({
+          clientName: 'a',
+          traceId: 'b',
+        });
+      });
+
+      it('reads an uncompressed encrypted result', async () => {
+        const body = utf8(encodeBody({ ok: true, amount: wire.decimal('12.50') }));
+        await expect(answer(PayloadFormat.Encrypted, () => sealed(body, 'T, A'))).resolves.toEqual({
+          ok: true,
+          amount: [12, '12.50'],
+        });
+      });
+
+      it('refuses a result with no type whose uncompressed body is not empty', async () => {
+        await expect(answer(PayloadFormat.Encoded, () => encoded(utf8('null'), ''))).rejects.toThrow(
+          /must have an empty body/,
+        );
+        await expect(answer(PayloadFormat.Encrypted, () => sealed(utf8('null'), ''))).rejects.toThrow(
+          /must have an empty body/,
+        );
+      });
+
+      it('refuses a body that starts with the gzip header but is not valid gzip', async () => {
+        const valid = await gzip(utf8(encodeBody({ ok: true })));
+        const truncated = valid.slice(0, valid.length - 4);
+        const garbage = Uint8Array.of(0x1f, 0x8b, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff);
+        for (const body of [truncated, garbage]) {
+          await expect(answer(PayloadFormat.Encoded, () => encoded(body))).rejects.toThrow();
+          await expect(answer(PayloadFormat.Encrypted, () => sealed(body, 'T, A'))).rejects.toThrow();
+          await expect(answer(PayloadFormat.Encoded, () => encoded(body, ''))).rejects.toThrow();
+        }
+      });
+    });
+
     it('refuses an encrypted null result that does not pass its HMAC', async () => {
       const otherKey = new Uint8Array(64).map((_, i) => 64 - i);
       const random = crypto.getRandomValues(new Uint8Array(96));

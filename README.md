@@ -169,8 +169,10 @@ written one; `restorePayload` therefore takes the format it expects as its secon
 result comes back in the request's format too, naming no type and with an empty body, and reads as
 `null` only once an encrypted one has passed its HMAC.
 
-A payload is decompressed with a limit, `MAX_DECOMPRESSED_LENGTH` (the default of the framework's
-`GzipPayloadCompressor`), and refused as soon as its output passes it.
+A body that starts with the gzip header is decompressed with a limit, `MAX_DECOMPRESSED_LENGTH` (the
+default of the framework's `GzipPayloadCompressor`), and refused as soon as its output passes it. Any
+other body is read as it is, uncompressed, as the framework reads one; this package still compresses
+everything it writes.
 
 ### Not supported yet: replay-protection frames
 

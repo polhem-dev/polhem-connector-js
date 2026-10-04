@@ -156,7 +156,8 @@ const result = await restorePayload(response.result, PayloadFormat.Encrypted, se
 因為傳輸路徑上的任何人都可能寫出這種結果；因此 `restorePayload` 的第二個參數是它預期的格式。null 結果同樣以請求的格式
 回傳：不標示 type、本文為空；加密的 null 結果要先通過 HMAC 驗證，才會讀成 `null`。
 
-payload 解壓縮時有上限 `MAX_DECOMPRESSED_LENGTH`（與框架 `GzipPayloadCompressor` 的預設值相同），輸出一超過就拒絕。
+以 gzip 標頭開頭的本文解壓縮時有上限 `MAX_DECOMPRESSED_LENGTH`（與框架 `GzipPayloadCompressor` 的預設值相同），
+輸出一超過就拒絕。其他本文視為未壓縮，照原樣讀取，與框架的讀法相同；本套件寫出的內容仍一律壓縮。
 
 ### 尚未支援：防重放 frame
 

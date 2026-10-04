@@ -309,9 +309,9 @@ export async function restorePayload(
 
   if (!type) {
     // The server writes a null result as zero bytes, uncompressed; gzip of nothing is read the same
-    // way. Zero bytes are not valid gzip, so they are accepted before decompressing. An empty body
-    // reads the same whatever the codec, so the codec is not checked here, as on .NET.
-    if (bytes.length === 0 || (await gunzip(bytes)).length === 0) {
+    // way. An empty body reads the same whatever the codec, so the codec is not checked here, as on
+    // .NET.
+    if ((await decompressBody(bytes)).length === 0) {
       return null;
     }
     throw new Error('A payload that names no type must have an empty body.');
@@ -323,5 +323,17 @@ export async function restorePayload(
     );
   }
 
-  return decodeBody(fromUtf8(await gunzip(bytes)));
+  return decodeBody(fromUtf8(await decompressBody(bytes)));
+}
+
+/**
+ * Decompresses a body that starts with the gzip header and passes any other through as it is, as
+ * the framework's `GzipPayloadCompressor` does (ADR-002, decision 2, in polhem-dev/polhem-jsonrpc).
+ *
+ * A writer may then leave a small body uncompressed once every reader accepts one; this package
+ * still compresses everything it writes. Zero bytes have no header and pass through. An
+ * uncompressed body is not held to the decompression limit: it is already in memory.
+ */
+async function decompressBody(bytes: Bytes): Promise<Bytes> {
+  return bytes[0] === 0x1f && bytes[1] === 0x8b ? gunzip(bytes) : bytes;
 }
