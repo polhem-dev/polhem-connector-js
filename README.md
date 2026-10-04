@@ -154,7 +154,7 @@ const params = await buildPayload(request, PayloadFormat.Encrypted, typeName, se
   method: 'Employee.GetList',
 });
 // A result is bound to the method of the request it answers.
-const result = await restorePayload(response.result, sessionKey, {
+const result = await restorePayload(response.result, PayloadFormat.Encrypted, sessionKey, {
   direction: PayloadDirection.Response,
   method: 'Employee.GetList',
 });
@@ -162,6 +162,12 @@ const result = await restorePayload(response.result, sessionKey, {
 
 `encrypt` and `decrypt` take the binding as their third argument, `associatedData`: the direction byte
 (`1` for a request, `2` for a result) followed by the method in UTF-8.
+
+A result must also be in the format its request was sent in (decision 6 of the same ADR). An encrypted
+call refuses a plain or encoded result, before decoding anything, since anybody on the way could have
+written one; `restorePayload` therefore takes the format it expects as its second argument. A null
+result comes back in the request's format too, naming no type and with an empty body, and reads as
+`null` only once an encrypted one has passed its HMAC.
 
 ### Not supported yet: replay-protection frames
 

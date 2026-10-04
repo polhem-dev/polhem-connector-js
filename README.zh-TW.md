@@ -143,7 +143,7 @@ const params = await buildPayload(request, PayloadFormat.Encrypted, typeName, se
   method: 'Employee.GetList',
 });
 // A result is bound to the method of the request it answers.
-const result = await restorePayload(response.result, sessionKey, {
+const result = await restorePayload(response.result, PayloadFormat.Encrypted, sessionKey, {
   direction: PayloadDirection.Response,
   method: 'Employee.GetList',
 });
@@ -151,6 +151,10 @@ const result = await restorePayload(response.result, sessionKey, {
 
 `encrypt` 與 `decrypt` 的第三個參數 `associatedData` 即為綁定：方向位元組（請求為 `1`、結果為 `2`），
 後接 method 的 UTF-8。
+
+結果也必須與請求送出時的格式相同（同一份 ADR 的決策 6）。加密呼叫會在解碼任何內容之前，拒絕 plain 或 encoded 的結果，
+因為傳輸路徑上的任何人都可能寫出這種結果；因此 `restorePayload` 的第二個參數是它預期的格式。null 結果同樣以請求的格式
+回傳：不標示 type、本文為空；加密的 null 結果要先通過 HMAC 驗證，才會讀成 `null`。
 
 ### 尚未支援：防重放 frame
 

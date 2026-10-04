@@ -85,7 +85,7 @@ describe('connectors', () => {
 
     const { fn, calls } = mockFetch(async (req) => {
       if (req.method === 'System.Login') {
-        const login = (await restorePayload(req.params)) as { clientPublicKey: string };
+        const login = (await restorePayload(req.params, PayloadFormat.Encoded)) as { clientPublicKey: string };
         const spki = Uint8Array.from(
           atob(login.clientPublicKey.replace(/-----[A-Z ]+-----/g, '').replace(/\s+/g, '')),
           (c) => c.charCodeAt(0),

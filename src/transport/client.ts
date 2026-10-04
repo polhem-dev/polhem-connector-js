@@ -110,10 +110,13 @@ export class JsonRpcTransport {
       throw new Error(`The response to '${method}' carried neither a result nor an error.`);
     }
 
-    return (await restorePayload(response.result, this.#encryptionKey ?? undefined, {
-      direction: PayloadDirection.Response,
-      method,
-    })) as T;
+    // A result answers in the format of its request and in no other (`restorePayload`).
+    return (await restorePayload(
+      response.result,
+      request.params.format,
+      this.#encryptionKey ?? undefined,
+      { direction: PayloadDirection.Response, method },
+    )) as T;
   }
 
   async #post(request: JsonRpcRequest): Promise<JsonRpcResponse> {

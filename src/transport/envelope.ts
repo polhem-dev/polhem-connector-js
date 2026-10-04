@@ -233,10 +233,19 @@ function assertNoWireValues(value: unknown, seen = new Set<object>()): void {
 /**
  * Restores a payload received from the server.
  *
+ * The payload must be in the format the caller expects, which for a result is the format its
+ * request was sent in, and it is refused before anything is decoded or decrypted otherwise.
+ * Without that, anybody on the way could answer an encrypted call with a plain result and the
+ * binding would protect nothing (ADR-003, decision 6, in polhem-dev/polhem-jsonrpc).
+ *
  * The codec is read off the payload rather than assumed: the server answers in whatever the request
  * asked for, so a mismatch should fail here rather than decode into something wrong.
  *
+ * A null result names no type and has an empty body: zero bytes, or gzip of nothing. It reads as
+ * `null`, and only after an encrypted one has passed its HMAC.
+ *
  * @param payload The payload as received.
+ * @param format The format the payload must be in. For a result, the format of its request.
  * @param encryptionKey The session key from the login handshake; required for `Encrypted`.
  * @param binding The direction and method the payload must have been written for; required for
  *   `Encrypted`. A call's result is `{ direction: PayloadDirection.Response, method }`, with the
@@ -244,11 +253,34 @@ function assertNoWireValues(value: unknown, seen = new Set<object>()): void {
  */
 export async function restorePayload(
   payload: ApiPayload,
+  format: PayloadFormatValue,
   encryptionKey?: Bytes,
   binding?: PayloadBinding,
 ): Promise<unknown> {
-  if (payload.format === PayloadFormat.Plain) {
+  if (typeof payload !== 'object' || payload === null || Array.isArray(payload)) {
+    throw new Error('The payload is not a JSON object.');
+  }
+
+  // An absent format is Plain, as the .NET reader takes it.
+  const received: unknown = payload.format ?? PayloadFormat.Plain;
+  if (
+    received !== PayloadFormat.Plain &&
+    received !== PayloadFormat.Encoded &&
+    received !== PayloadFormat.Encrypted
+  ) {
+    throw new Error('The payload names an unknown format.');
+  }
+  if (received !== format) {
+    throw new Error(`The payload is in format ${received}, but format ${format} was expected.`);
+  }
+
+  if (format === PayloadFormat.Plain) {
     return payload.value;
+  }
+
+  const type: unknown = payload.type;
+  if (type !== undefined && type !== null && typeof type !== 'string') {
+    throw new Error('The payload type must be a string.');
   }
 
   if (payload.codec && payload.codec !== JSON_CODEC) {
@@ -257,13 +289,25 @@ export async function restorePayload(
     );
   }
 
-  let bytes = fromBase64(payload.value as string);
+  if (typeof payload.value !== 'string') {
+    throw new Error('An encoded payload must carry its body as a Base64 string.');
+  }
+  let bytes = fromBase64(payload.value);
 
-  if (payload.format === PayloadFormat.Encrypted) {
+  if (format === PayloadFormat.Encrypted) {
     if (!encryptionKey) {
       throw new Error('Encryption key is required to read an encrypted payload.');
     }
     bytes = await decrypt(bytes, encryptionKey, bindingBytes(binding));
+  }
+
+  if (!type) {
+    // The server writes a null result as zero bytes, uncompressed; gzip of nothing is read the same
+    // way. Zero bytes are not valid gzip, so they are accepted before decompressing.
+    if (bytes.length === 0 || (await gunzip(bytes)).length === 0) {
+      return null;
+    }
+    throw new Error('A payload that names no type must have an empty body.');
   }
 
   return decodeBody(fromUtf8(await gunzip(bytes)));

@@ -11,9 +11,10 @@ import {
   type ApiPayload,
   type JsonRpcRequest,
   type PayloadBinding,
+  type PayloadFormatValue,
 } from '../src/transport/envelope.js';
 import { encrypt } from '../src/crypto/aes-cbc-hmac.js';
-import { fromBase64, toBase64, utf8 } from '../src/crypto/bytes.js';
+import { concat, fromBase64, toBase64, utf8 } from '../src/crypto/bytes.js';
 import { gzip } from '../src/crypto/gzip.js';
 import { encodeBody } from '../src/codec/json-body.js';
 import { wire } from '../src/codec/wire-value.js';
@@ -85,7 +86,7 @@ describe('JSON-RPC transport', () => {
   it('encrypts once a session key is installed, and reads the answer back', async () => {
     const { fn, calls } = mockFetch(async (req) => {
       // Stand in for the server: decode the request with the same key, then answer in kind.
-      const received = await restorePayload(req.params, sessionKey, {
+      const received = await restorePayload(req.params, PayloadFormat.Encrypted, sessionKey, {
         direction: PayloadDirection.Request,
         method: req.method,
       });
@@ -157,7 +158,7 @@ describe('JSON-RPC transport', () => {
       value: 'AAAA',
     };
 
-    await expect(restorePayload(payload)).rejects.toThrow(/messagepack/);
+    await expect(restorePayload(payload, PayloadFormat.Encoded)).rejects.toThrow(/messagepack/);
   });
 
   it('refuses to encode without the pieces the server requires', async () => {
@@ -180,9 +181,135 @@ describe('JSON-RPC transport', () => {
     });
     for (const binding of bad) {
       await expect(buildPayload({}, PayloadFormat.Encrypted, 'T, A', sessionKey, binding)).rejects.toThrow();
-      await expect(restorePayload(valid, sessionKey, binding)).rejects.toThrow();
+      await expect(restorePayload(valid, PayloadFormat.Encrypted, sessionKey, binding)).rejects.toThrow();
     }
-    await expect(restorePayload(valid, sessionKey)).rejects.toThrow(/bound to its direction and method/);
+    await expect(restorePayload(valid, PayloadFormat.Encrypted, sessionKey)).rejects.toThrow(/bound to its direction and method/);
+  });
+
+  describe('format of a result', () => {
+    const METHOD = 'Employee.GetList';
+    const response = { direction: PayloadDirection.Response, method: METHOD } as const;
+
+    /** Sends one call in `format` and answers it with whatever `result` builds. */
+    async function answer(format: PayloadFormatValue, result: () => unknown) {
+      const { fn } = mockFetch(async (req) => ({ jsonrpc: '2.0', id: req.id, result: await result() }));
+      const client = transport(fn);
+      client.setEncryptionKey(sessionKey);
+      return client.execute(METHOD, {}, { format, typeName: 'T, A' });
+    }
+
+    /** An encrypted payload whose body is `body` exactly, before encryption. */
+    async function sealed(body: Uint8Array<ArrayBuffer>, type: unknown, key = sessionKey, method = METHOD) {
+      const ad = concat(Uint8Array.of(PayloadDirection.Response), utf8(method));
+      return { format: PayloadFormat.Encrypted, codec: 'json', type, value: toBase64(await encrypt(body, key, ad)) };
+    }
+
+    const NO_BYTES = new Uint8Array(0);
+
+    it.each([
+      ['a plain result', { format: PayloadFormat.Plain, value: { ok: true } }],
+      ['a plain null', { format: PayloadFormat.Plain, value: null }],
+      ['a result with no format, which reads as plain', { value: { ok: true } }],
+    ])('refuses %s to an encrypted call', async (_name, result) => {
+      await expect(answer(PayloadFormat.Encrypted, () => result)).rejects.toThrow(/but format 2 was expected/);
+    });
+
+    it('refuses an encoded result to an encrypted call', async () => {
+      await expect(
+        answer(PayloadFormat.Encrypted, () => buildPayload({ ok: true }, PayloadFormat.Encoded, 'T, A')),
+      ).rejects.toThrow(/format 1, but format 2 was expected/);
+    });
+
+    it('refuses an encrypted result to an encoded call', async () => {
+      await expect(
+        answer(PayloadFormat.Encoded, () =>
+          buildPayload({ ok: true }, PayloadFormat.Encrypted, 'T, A', sessionKey, response),
+        ),
+      ).rejects.toThrow(/format 2, but format 1 was expected/);
+    });
+
+    it('refuses a plain null to an encoded call', async () => {
+      await expect(
+        answer(PayloadFormat.Encoded, () => ({ format: PayloadFormat.Plain, value: null })),
+      ).rejects.toThrow(/format 0, but format 1 was expected/);
+    });
+
+    it('reads a plain result with no format as plain, as the .NET reader does', async () => {
+      await expect(answer(PayloadFormat.Plain, () => ({ value: { ok: true } }))).resolves.toEqual({ ok: true });
+      await expect(answer(PayloadFormat.Plain, () => ({ format: 0, value: null }))).resolves.toBeNull();
+    });
+
+    it.each([['the string "2"', '2'], ['3', 3], ['1.5', 1.5], ['null', null]])(
+      'refuses a format of %s',
+      async (_name, format) => {
+        await expect(
+          answer(PayloadFormat.Encrypted, async () => ({ ...(await sealed(NO_BYTES, '')), format })),
+        ).rejects.toThrow(/unknown format|but format 2 was expected/);
+      },
+    );
+
+    it.each([['an array', []], ['a string', 'AAAA'], ['a number', 2]])(
+      'refuses a result that is %s',
+      async (_name, result) => {
+        await expect(answer(PayloadFormat.Encrypted, () => result)).rejects.toThrow(/not a JSON object/);
+      },
+    );
+
+    it('refuses a type that is not a string', async () => {
+      await expect(answer(PayloadFormat.Encrypted, () => sealed(NO_BYTES, 42))).rejects.toThrow(
+        /type must be a string/,
+      );
+    });
+
+    it.each([['absent', undefined], ['null', null], ['empty', '']])(
+      'reads an encrypted null result, with the type %s and a body of zero bytes',
+      async (_name, type) => {
+        await expect(answer(PayloadFormat.Encrypted, () => sealed(NO_BYTES, type))).resolves.toBeNull();
+      },
+    );
+
+    it('reads an encrypted null result whose body is gzip of nothing', async () => {
+      const empty = await gzip(NO_BYTES);
+      await expect(answer(PayloadFormat.Encrypted, () => sealed(empty, ''))).resolves.toBeNull();
+    });
+
+    it('reads an encoded null result, with a body of zero bytes or gzip of nothing', async () => {
+      const encoded = (body: Uint8Array<ArrayBuffer>) => ({
+        format: PayloadFormat.Encoded,
+        codec: 'json',
+        type: '',
+        value: toBase64(body),
+      });
+      await expect(answer(PayloadFormat.Encoded, () => encoded(NO_BYTES))).resolves.toBeNull();
+      const empty = await gzip(NO_BYTES);
+      await expect(answer(PayloadFormat.Encoded, () => encoded(empty))).resolves.toBeNull();
+    });
+
+    it('refuses an encrypted null result that does not pass its HMAC', async () => {
+      const otherKey = new Uint8Array(64).map((_, i) => 64 - i);
+      const random = crypto.getRandomValues(new Uint8Array(96));
+      for (const result of [
+        { format: PayloadFormat.Encrypted, codec: 'json', type: '', value: toBase64(random) },
+        await sealed(NO_BYTES, '', otherKey),
+        await sealed(NO_BYTES, '', sessionKey, 'Employee.GetData'),
+      ]) {
+        await expect(answer(PayloadFormat.Encrypted, () => result)).rejects.toThrow(
+          /HMAC validation failed|Invalid/,
+        );
+      }
+    });
+
+    it('refuses a real encrypted result with its type taken away', async () => {
+      const result = await buildPayload({ ok: true }, PayloadFormat.Encrypted, 'T, A', sessionKey, response);
+      delete result.type;
+      await expect(answer(PayloadFormat.Encrypted, () => result)).rejects.toThrow(/must have an empty body/);
+    });
+
+    it('refuses an encoded result with no type whose body is not empty', async () => {
+      const result = await buildPayload({ ok: true }, PayloadFormat.Encoded, 'T, A');
+      result.type = '';
+      await expect(answer(PayloadFormat.Encoded, () => result)).rejects.toThrow(/must have an empty body/);
+    });
   });
 
   describe('binding of an encrypted result', () => {
@@ -235,13 +362,13 @@ describe('JSON-RPC transport', () => {
       const { params } = calls[0]!.request;
 
       await expect(
-        restorePayload(params, sessionKey, { direction: PayloadDirection.Request, method: 'Employee.GetList' }),
+        restorePayload(params, PayloadFormat.Encrypted, sessionKey, { direction: PayloadDirection.Request, method: 'Employee.GetList' }),
       ).resolves.toEqual({});
       await expect(
-        restorePayload(params, sessionKey, { direction: PayloadDirection.Request, method: 'Employee.Delete' }),
+        restorePayload(params, PayloadFormat.Encrypted, sessionKey, { direction: PayloadDirection.Request, method: 'Employee.Delete' }),
       ).rejects.toThrow('HMAC validation failed.');
       await expect(
-        restorePayload(params, sessionKey, { direction: PayloadDirection.Response, method: 'Employee.GetList' }),
+        restorePayload(params, PayloadFormat.Encrypted, sessionKey, { direction: PayloadDirection.Response, method: 'Employee.GetList' }),
       ).rejects.toThrow('HMAC validation failed.');
     });
   });
