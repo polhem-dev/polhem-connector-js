@@ -1,8 +1,8 @@
 import { concat, int32LE, readInt32LE, type Bytes } from './bytes.js';
 
 /**
- * AES-256-CBC encryption with an HMAC-SHA256 authentication tag, wire-compatible with the
- * framework's `AesCbcHmacCryptor`.
+ * AES-256-CBC encryption with an HMAC-SHA256 authentication tag over associated data, matching the
+ * payload encryption of Polhem.JsonRpc 1.1.0 (ADR-003 in polhem-dev/polhem-jsonrpc).
  *
  * The layout is written by .NET's `BinaryWriter`, so the two length prefixes are
  * **little-endian** 32-bit signed integers:
@@ -12,7 +12,11 @@ import { concat, int32LE, readInt32LE, type Bytes } from './bytes.js';
  * ```
  *
  * The HMAC covers everything before it — both length prefixes included — so a rewritten length
- * fails verification rather than shifting the parse.
+ * fails verification rather than shifting the parse. It then covers the associated data, which is
+ * not written to the payload: both ends supply it from the call. The JSON-RPC transport passes the
+ * direction and the method (see `buildPayload`), so a payload opens only as the call it was written
+ * for. With empty associated data the tag is the one the framework's `AesCbcHmacCryptor` computes
+ * for its settings, which stay unbound; `buildPayload` never produces that form.
  */
 
 const IV_LENGTH = 16;
@@ -50,8 +54,14 @@ async function importHmacKey(raw: Bytes, usages: KeyUsage[]): Promise<CryptoKey>
  *
  * @param plain The bytes to encrypt.
  * @param combinedKey The 64-byte session key exchanged at login.
+ * @param associatedData Authenticated after the ciphertext but not written to the payload; the
+ *   reader must supply the same bytes to {@link decrypt}.
  */
-export async function encrypt(plain: Bytes, combinedKey: Bytes): Promise<Bytes> {
+export async function encrypt(
+  plain: Bytes,
+  combinedKey: Bytes,
+  associatedData: Bytes,
+): Promise<Bytes> {
   const { aesKey, hmacKey } = splitKey(combinedKey);
   const iv = crypto.getRandomValues(new Uint8Array(IV_LENGTH));
 
@@ -61,7 +71,9 @@ export async function encrypt(plain: Bytes, combinedKey: Bytes): Promise<Bytes> 
   const authenticated = concat(int32LE(iv.length), iv, int32LE(cipher.length), cipher);
 
   const mac = await importHmacKey(hmacKey, ['sign']);
-  const tag = new Uint8Array(await crypto.subtle.sign('HMAC', mac, authenticated));
+  const tag = new Uint8Array(
+    await crypto.subtle.sign('HMAC', mac, concat(authenticated, associatedData)),
+  );
 
   return concat(authenticated, tag);
 }
@@ -71,9 +83,16 @@ export async function encrypt(plain: Bytes, combinedKey: Bytes): Promise<Bytes> 
  *
  * @param payload The encrypted bytes as produced by {@link encrypt} or by the server.
  * @param combinedKey The 64-byte session key exchanged at login.
+ * @param associatedData The bytes the writer passed to {@link encrypt}. There is no retry
+ *   without them: a reader that also accepted a payload tagged without its binding could be
+ *   downgraded by anyone who sends one.
  * @throws When the payload is malformed or its tag does not verify.
  */
-export async function decrypt(payload: Bytes, combinedKey: Bytes): Promise<Bytes> {
+export async function decrypt(
+  payload: Bytes,
+  combinedKey: Bytes,
+  associatedData: Bytes,
+): Promise<Bytes> {
   if (payload.length < MIN_LENGTH) {
     throw new Error('Invalid encrypted data.');
   }
@@ -93,7 +112,7 @@ export async function decrypt(payload: Bytes, combinedKey: Bytes): Promise<Bytes
   const cipherStart = 8 + ivLength;
   const cipher = payload.subarray(cipherStart, cipherStart + cipherLength);
   const tag = payload.subarray(cipherStart + cipherLength, cipherStart + cipherLength + HMAC_LENGTH);
-  const authenticated = payload.subarray(0, cipherStart + cipherLength);
+  const authenticated = concat(payload.subarray(0, cipherStart + cipherLength), associatedData);
 
   // `verify` compares in constant time, which is the property the framework's own
   // `FixedTimeEquals` provides on the other end.

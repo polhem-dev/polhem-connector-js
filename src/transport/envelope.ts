@@ -1,5 +1,5 @@
 import { decrypt, encrypt } from '../crypto/aes-cbc-hmac.js';
-import { fromBase64, fromUtf8, toBase64, utf8, type Bytes } from '../crypto/bytes.js';
+import { concat, fromBase64, fromUtf8, toBase64, utf8, type Bytes } from '../crypto/bytes.js';
 import { gunzip, gzip } from '../crypto/gzip.js';
 import { decodeBody, encodeBody, isTaggedWireValue } from '../codec/json-body.js';
 
@@ -30,6 +30,45 @@ export type PayloadFormatValue = (typeof PayloadFormat)[keyof typeof PayloadForm
  * not implement — so every encoded payload here names `json` explicitly.
  */
 export const JSON_CODEC = 'json';
+
+/** Which way an encrypted payload travels. Authenticated as the first byte of its binding. */
+export const PayloadDirection = {
+  /** The `params` of a call. */
+  Request: 1,
+  /** The `result` of a call. */
+  Response: 2,
+} as const;
+
+export type PayloadDirectionValue = (typeof PayloadDirection)[keyof typeof PayloadDirection];
+
+/**
+ * What an encrypted payload is bound to: its direction and the JSON-RPC method of the call.
+ *
+ * The HMAC covers it but the payload does not carry it, so the reader supplies the same binding
+ * from the call it is reading. A result is bound to the method of the request it answers. This is
+ * what stops a captured payload being replayed as another method, or a result being sent back as
+ * the parameters of a call (ADR-003 in polhem-dev/polhem-jsonrpc).
+ */
+export interface PayloadBinding {
+  direction: PayloadDirectionValue;
+  /** The JSON-RPC `method`, exactly as sent: `progId.action`. */
+  method: string;
+}
+
+/** Spells a binding as the HMAC's associated data: the direction byte, then the method in UTF-8. */
+function bindingBytes(binding: PayloadBinding | undefined): Bytes {
+  if (!binding) {
+    throw new Error('An encrypted payload must be bound to its direction and method.');
+  }
+  const { direction } = binding;
+  if (direction !== PayloadDirection.Request && direction !== PayloadDirection.Response) {
+    throw new Error(`Unknown payload direction ${String(direction)}.`);
+  }
+  if (typeof binding.method !== 'string' || binding.method.length === 0) {
+    throw new Error('An encrypted payload must be bound to a method.');
+  }
+  return concat(Uint8Array.of(direction), utf8(binding.method));
+}
 
 /** A JSON-RPC payload: the `params` of a request, or the `result` of a response. */
 export interface ApiPayload {
@@ -137,12 +176,15 @@ export function toJsonRpcError(error: JsonRpcErrorBody, httpStatus?: number): Js
  * @param typeName The assembly-qualified type name. Required unless the format is Plain: the server
  *   resolves the target type from it, and screens it against an allow-list first.
  * @param encryptionKey The session key from the login handshake; required for `Encrypted`.
+ * @param binding The direction and method the payload is written for; required for `Encrypted`.
+ *   A request's parameters are `{ direction: PayloadDirection.Request, method }`.
  */
 export async function buildPayload(
   value: unknown,
   format: PayloadFormatValue,
   typeName?: string,
   encryptionKey?: Bytes,
+  binding?: PayloadBinding,
 ): Promise<ApiPayload> {
   if (format === PayloadFormat.Plain) {
     // A Plain payload carries the object itself and needs no type name — the server resolves the
@@ -161,7 +203,7 @@ export async function buildPayload(
     if (!encryptionKey) {
       throw new Error('Encryption key is required for an encrypted payload.');
     }
-    bytes = await encrypt(bytes, encryptionKey);
+    bytes = await encrypt(bytes, encryptionKey, bindingBytes(binding));
   }
 
   return { format, codec: JSON_CODEC, type: typeName, value: toBase64(bytes) };
@@ -193,8 +235,18 @@ function assertNoWireValues(value: unknown, seen = new Set<object>()): void {
  *
  * The codec is read off the payload rather than assumed: the server answers in whatever the request
  * asked for, so a mismatch should fail here rather than decode into something wrong.
+ *
+ * @param payload The payload as received.
+ * @param encryptionKey The session key from the login handshake; required for `Encrypted`.
+ * @param binding The direction and method the payload must have been written for; required for
+ *   `Encrypted`. A call's result is `{ direction: PayloadDirection.Response, method }`, with the
+ *   method of the request it answers. A payload written for anything else fails its HMAC.
  */
-export async function restorePayload(payload: ApiPayload, encryptionKey?: Bytes): Promise<unknown> {
+export async function restorePayload(
+  payload: ApiPayload,
+  encryptionKey?: Bytes,
+  binding?: PayloadBinding,
+): Promise<unknown> {
   if (payload.format === PayloadFormat.Plain) {
     return payload.value;
   }
@@ -211,7 +263,7 @@ export async function restorePayload(payload: ApiPayload, encryptionKey?: Bytes)
     if (!encryptionKey) {
       throw new Error('Encryption key is required to read an encrypted payload.');
     }
-    bytes = await decrypt(bytes, encryptionKey);
+    bytes = await decrypt(bytes, encryptionKey, bindingBytes(binding));
   }
 
   return decodeBody(fromUtf8(await gunzip(bytes)));

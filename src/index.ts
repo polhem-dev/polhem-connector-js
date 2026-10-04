@@ -34,6 +34,7 @@ export {
   JSON_CODEC,
   JsonRpcError,
   JsonRpcErrorCode,
+  PayloadDirection,
   PayloadFormat,
   buildPayload,
   restorePayload,
@@ -43,6 +44,8 @@ export type {
   JsonRpcErrorBody,
   JsonRpcRequest,
   JsonRpcResponse,
+  PayloadBinding,
+  PayloadDirectionValue,
   PayloadFormatValue,
 } from './transport/envelope.js';
 export { JsonRpcTransport } from './transport/client.js';

@@ -4,13 +4,18 @@ import {
   AuthenticationRequiredError,
   JsonRpcError,
   JsonRpcErrorCode,
+  PayloadDirection,
   PayloadFormat,
   buildPayload,
   restorePayload,
   type ApiPayload,
   type JsonRpcRequest,
+  type PayloadBinding,
 } from '../src/transport/envelope.js';
-import { fromBase64 } from '../src/crypto/bytes.js';
+import { encrypt } from '../src/crypto/aes-cbc-hmac.js';
+import { fromBase64, toBase64, utf8 } from '../src/crypto/bytes.js';
+import { gzip } from '../src/crypto/gzip.js';
+import { encodeBody } from '../src/codec/json-body.js';
 import { wire } from '../src/codec/wire-value.js';
 
 const ENDPOINT = 'https://example.test/api';
@@ -80,7 +85,10 @@ describe('JSON-RPC transport', () => {
   it('encrypts once a session key is installed, and reads the answer back', async () => {
     const { fn, calls } = mockFetch(async (req) => {
       // Stand in for the server: decode the request with the same key, then answer in kind.
-      const received = await restorePayload(req.params, sessionKey);
+      const received = await restorePayload(req.params, sessionKey, {
+        direction: PayloadDirection.Request,
+        method: req.method,
+      });
       return {
         jsonrpc: '2.0',
         id: req.id,
@@ -89,6 +97,7 @@ describe('JSON-RPC transport', () => {
           PayloadFormat.Encrypted,
           'Some.Response, Some.Asm',
           sessionKey,
+          { direction: PayloadDirection.Response, method: req.method },
         ),
       };
     });
@@ -154,6 +163,87 @@ describe('JSON-RPC transport', () => {
   it('refuses to encode without the pieces the server requires', async () => {
     await expect(buildPayload({}, PayloadFormat.Encoded)).rejects.toThrow(/name its type/);
     await expect(buildPayload({}, PayloadFormat.Encrypted, 'T, A')).rejects.toThrow(/key is required/);
+    await expect(buildPayload({}, PayloadFormat.Encrypted, 'T, A', sessionKey)).rejects.toThrow(
+      /bound to its direction and method/,
+    );
+  });
+
+  it('refuses to encrypt or decrypt with a malformed binding', async () => {
+    const bad = [
+      { direction: 0, method: 'Employee.GetList' },
+      { direction: 3, method: 'Employee.GetList' },
+      { direction: PayloadDirection.Request, method: '' },
+    ] as unknown as PayloadBinding[];
+    const valid = await buildPayload({}, PayloadFormat.Encrypted, 'T, A', sessionKey, {
+      direction: PayloadDirection.Request,
+      method: 'Employee.GetList',
+    });
+    for (const binding of bad) {
+      await expect(buildPayload({}, PayloadFormat.Encrypted, 'T, A', sessionKey, binding)).rejects.toThrow();
+      await expect(restorePayload(valid, sessionKey, binding)).rejects.toThrow();
+    }
+    await expect(restorePayload(valid, sessionKey)).rejects.toThrow(/bound to its direction and method/);
+  });
+
+  describe('binding of an encrypted result', () => {
+    /** A server that seals its result with the binding the scenario chooses. */
+    function serverBinding(binding: (req: JsonRpcRequest) => PayloadBinding) {
+      return mockFetch(async (req) => ({
+        jsonrpc: '2.0',
+        id: req.id,
+        result: await buildPayload({ ok: true }, PayloadFormat.Encrypted, 'T, A', sessionKey, binding(req)),
+      }));
+    }
+
+    async function call(fetchImpl: typeof fetch) {
+      const client = transport(fetchImpl);
+      client.setEncryptionKey(sessionKey);
+      return client.execute('Employee.GetList', {}, { typeName: 'T, A' });
+    }
+
+    it('reads a result bound to the response direction and the method of the call', async () => {
+      const { fn } = serverBinding((req) => ({ direction: PayloadDirection.Response, method: req.method }));
+      await expect(call(fn)).resolves.toEqual({ ok: true });
+    });
+
+    it('refuses a result bound to another method', async () => {
+      const { fn } = serverBinding(() => ({ direction: PayloadDirection.Response, method: 'Employee.GetData' }));
+      await expect(call(fn)).rejects.toThrow('HMAC validation failed.');
+    });
+
+    it('refuses a payload bound to the request direction, such as the call echoed back', async () => {
+      const { fn } = serverBinding((req) => ({ direction: PayloadDirection.Request, method: req.method }));
+      await expect(call(fn)).rejects.toThrow('HMAC validation failed.');
+    });
+
+    it('refuses a result tagged without a binding, and does not retry without one', async () => {
+      const { fn, calls } = mockFetch(async (req) => {
+        const unbound = await encrypt(await gzip(utf8(encodeBody({ ok: true }))), sessionKey, new Uint8Array(0));
+        return {
+          jsonrpc: '2.0',
+          id: req.id,
+          result: { format: PayloadFormat.Encrypted, codec: 'json', type: 'T, A', value: toBase64(unbound) },
+        };
+      });
+      await expect(call(fn)).rejects.toThrow('HMAC validation failed.');
+      expect(calls).toHaveLength(1);
+    });
+
+    it('binds the request parameters to the request direction and the method', async () => {
+      const { fn, calls } = serverBinding((req) => ({ direction: PayloadDirection.Response, method: req.method }));
+      await call(fn);
+      const { params } = calls[0]!.request;
+
+      await expect(
+        restorePayload(params, sessionKey, { direction: PayloadDirection.Request, method: 'Employee.GetList' }),
+      ).resolves.toEqual({});
+      await expect(
+        restorePayload(params, sessionKey, { direction: PayloadDirection.Request, method: 'Employee.Delete' }),
+      ).rejects.toThrow('HMAC validation failed.');
+      await expect(
+        restorePayload(params, sessionKey, { direction: PayloadDirection.Response, method: 'Employee.GetList' }),
+      ).rejects.toThrow('HMAC validation failed.');
+    });
   });
 
   it('raises AuthenticationRequiredError for -32001, so a caller can tell it to sign in again', async () => {

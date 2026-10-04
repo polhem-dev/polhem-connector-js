@@ -134,6 +134,35 @@ A rejection at the server's HTTP gate (a missing or invalid API key, a malformed
 header) is also a `JsonRpcError`, with `httpStatus` set to the status it came with. It is not an
 `AuthenticationRequiredError`: signing in again would be refused the same way.
 
+### Encrypted payloads are bound to their call
+
+The HMAC of an encrypted payload also covers which way it travels and the JSON-RPC method of the call
+([ADR-003](https://github.com/polhem-dev/polhem-jsonrpc/blob/main/maintainers/adr/adr-003-bind-method-into-payload-hmac.md)
+in polhem-jsonrpc), so a captured payload cannot be replayed as another method, nor a result sent back
+as the parameters of a call. This needs a server on Polhem.JsonRpc 1.1.0 or later; an older server
+cannot read this client's encrypted calls, nor this client an older server's encrypted results. There
+is no fallback to the unbound form, since a client that accepted both could be downgraded.
+
+`PolhemClient` and `JsonRpcTransport` bind every call themselves. Code that uses the lower-level
+exports passes the binding explicitly, and an encrypted payload without one is refused:
+
+```ts
+import { PayloadDirection, PayloadFormat, buildPayload, restorePayload } from '@polhem/connector';
+
+const params = await buildPayload(request, PayloadFormat.Encrypted, typeName, sessionKey, {
+  direction: PayloadDirection.Request,
+  method: 'Employee.GetList',
+});
+// A result is bound to the method of the request it answers.
+const result = await restorePayload(response.result, sessionKey, {
+  direction: PayloadDirection.Response,
+  method: 'Employee.GetList',
+});
+```
+
+`encrypt` and `decrypt` take the binding as their third argument, `associatedData`: the direction byte
+(`1` for a request, `2` for a result) followed by the method in UTF-8.
+
 ### Not supported yet: replay-protection frames
 
 A deployment can require an anti-replay frame inside every Encoded and Encrypted payload
