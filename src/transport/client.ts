@@ -1,5 +1,6 @@
 import type { Bytes } from '../crypto/bytes.js';
 import {
+  PayloadDirection,
   PayloadFormat,
   buildPayload,
   restorePayload,
@@ -90,7 +91,13 @@ export class JsonRpcTransport {
     const request: JsonRpcRequest = {
       jsonrpc: '2.0',
       method,
-      params: await buildPayload(value, format, options.typeName, this.#encryptionKey ?? undefined),
+      params: await buildPayload(
+        value,
+        format,
+        options.typeName,
+        this.#encryptionKey ?? undefined,
+        { direction: PayloadDirection.Request, method },
+      ),
       id: crypto.randomUUID(),
     };
 
@@ -103,7 +110,13 @@ export class JsonRpcTransport {
       throw new Error(`The response to '${method}' carried neither a result nor an error.`);
     }
 
-    return (await restorePayload(response.result, this.#encryptionKey ?? undefined)) as T;
+    // A result answers in the format of its request and in no other (`restorePayload`).
+    return (await restorePayload(
+      response.result,
+      request.params.format,
+      this.#encryptionKey ?? undefined,
+      { direction: PayloadDirection.Response, method },
+    )) as T;
   }
 
   async #post(request: JsonRpcRequest): Promise<JsonRpcResponse> {

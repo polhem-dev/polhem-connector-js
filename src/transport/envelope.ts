@@ -1,5 +1,5 @@
 import { decrypt, encrypt } from '../crypto/aes-cbc-hmac.js';
-import { fromBase64, fromUtf8, toBase64, utf8, type Bytes } from '../crypto/bytes.js';
+import { concat, fromBase64, fromUtf8, toBase64, utf8, type Bytes } from '../crypto/bytes.js';
 import { gunzip, gzip } from '../crypto/gzip.js';
 import { decodeBody, encodeBody, isTaggedWireValue } from '../codec/json-body.js';
 
@@ -30,6 +30,51 @@ export type PayloadFormatValue = (typeof PayloadFormat)[keyof typeof PayloadForm
  * not implement — so every encoded payload here names `json` explicitly.
  */
 export const JSON_CODEC = 'json';
+
+/** Which way an encrypted payload travels. Authenticated as the first byte of its binding. */
+export const PayloadDirection = {
+  /** The `params` of a call. */
+  Request: 1,
+  /** The `result` of a call. */
+  Response: 2,
+} as const;
+
+export type PayloadDirectionValue = (typeof PayloadDirection)[keyof typeof PayloadDirection];
+
+/**
+ * What an encrypted payload is bound to: its direction and the JSON-RPC method of the call.
+ *
+ * The HMAC covers it but the payload does not carry it, so the reader supplies the same binding
+ * from the call it is reading. A result is bound to the method of the request it answers. This is
+ * what stops a captured payload being replayed as another method, or a result being sent back as
+ * the parameters of a call (ADR-003 in polhem-dev/polhem-jsonrpc).
+ */
+export interface PayloadBinding {
+  direction: PayloadDirectionValue;
+  /** The JSON-RPC `method`, exactly as sent: `progId.action`. */
+  method: string;
+}
+
+/** Spells a binding as the HMAC's associated data: the direction byte, then the method in UTF-8. */
+function bindingBytes(binding: PayloadBinding | undefined): Bytes {
+  if (!binding) {
+    throw new Error('An encrypted payload must be bound to its direction and method.');
+  }
+  const { direction } = binding;
+  if (direction !== PayloadDirection.Request && direction !== PayloadDirection.Response) {
+    throw new Error(`Unknown payload direction ${String(direction)}.`);
+  }
+  if (typeof binding.method !== 'string' || binding.method.length === 0) {
+    throw new Error('An encrypted payload must be bound to a method.');
+  }
+  return concat(Uint8Array.of(direction), utf8(binding.method));
+}
+
+function isPayloadFormat(value: unknown): value is PayloadFormatValue {
+  return (
+    value === PayloadFormat.Plain || value === PayloadFormat.Encoded || value === PayloadFormat.Encrypted
+  );
+}
 
 /** A JSON-RPC payload: the `params` of a request, or the `result` of a response. */
 export interface ApiPayload {
@@ -137,13 +182,20 @@ export function toJsonRpcError(error: JsonRpcErrorBody, httpStatus?: number): Js
  * @param typeName The assembly-qualified type name. Required unless the format is Plain: the server
  *   resolves the target type from it, and screens it against an allow-list first.
  * @param encryptionKey The session key from the login handshake; required for `Encrypted`.
+ * @param binding The direction and method the payload is written for; required for `Encrypted`.
+ *   A request's parameters are `{ direction: PayloadDirection.Request, method }`.
  */
 export async function buildPayload(
   value: unknown,
   format: PayloadFormatValue,
   typeName?: string,
   encryptionKey?: Bytes,
+  binding?: PayloadBinding,
 ): Promise<ApiPayload> {
+  // A caller without type checks could pass '2', which would otherwise be sent as Encoded, in clear.
+  if (!isPayloadFormat(format)) {
+    throw new Error('The payload format must be 0, 1 or 2.');
+  }
   if (format === PayloadFormat.Plain) {
     // A Plain payload carries the object itself and needs no type name — the server resolves the
     // target type from the business object's method signature instead.
@@ -161,7 +213,7 @@ export async function buildPayload(
     if (!encryptionKey) {
       throw new Error('Encryption key is required for an encrypted payload.');
     }
-    bytes = await encrypt(bytes, encryptionKey);
+    bytes = await encrypt(bytes, encryptionKey, bindingBytes(binding));
   }
 
   return { format, codec: JSON_CODEC, type: typeName, value: toBase64(bytes) };
@@ -191,28 +243,100 @@ function assertNoWireValues(value: unknown, seen = new Set<object>()): void {
 /**
  * Restores a payload received from the server.
  *
+ * The payload must be in the format the caller expects, which for a result is the format its
+ * request was sent in, and it is refused before anything is decoded or decrypted otherwise.
+ * Without that, anybody on the way could answer an encrypted call with a plain result and the
+ * binding would protect nothing (ADR-003, decision 6, in polhem-dev/polhem-jsonrpc).
+ *
  * The codec is read off the payload rather than assumed: the server answers in whatever the request
  * asked for, so a mismatch should fail here rather than decode into something wrong.
+ *
+ * A null result names no type and has an empty body: zero bytes, or gzip of nothing. It reads as
+ * `null`, and only after an encrypted one has passed its HMAC.
+ *
+ * @param payload The payload as received.
+ * @param format The format the payload must be in. For a result, the format of its request.
+ * @param encryptionKey The session key from the login handshake; required for `Encrypted`.
+ * @param binding The direction and method the payload must have been written for; required for
+ *   `Encrypted`. A call's result is `{ direction: PayloadDirection.Response, method }`, with the
+ *   method of the request it answers. A payload written for anything else fails its HMAC.
  */
-export async function restorePayload(payload: ApiPayload, encryptionKey?: Bytes): Promise<unknown> {
-  if (payload.format === PayloadFormat.Plain) {
+export async function restorePayload(
+  payload: ApiPayload,
+  format: PayloadFormatValue,
+  encryptionKey?: Bytes,
+  binding?: PayloadBinding,
+): Promise<unknown> {
+  // Checked before it is used, and never echoed: a caller still on the old signature passes the
+  // session key here, and an error message must not carry it.
+  if (!isPayloadFormat(format)) {
+    throw new Error('The expected payload format must be 0, 1 or 2.');
+  }
+  if (typeof payload !== 'object' || payload === null || Array.isArray(payload)) {
+    throw new Error('The payload is not a JSON object.');
+  }
+
+  // An absent format is Plain, as the .NET reader takes it; a null one is not a format.
+  const received: unknown = 'format' in payload ? payload.format : PayloadFormat.Plain;
+  if (!isPayloadFormat(received)) {
+    throw new Error('The payload names an unknown format.');
+  }
+  if (received !== format) {
+    throw new Error(`The payload is in format ${received}, but format ${format} was expected.`);
+  }
+
+  if (format === PayloadFormat.Plain) {
     return payload.value;
   }
 
-  if (payload.codec && payload.codec !== JSON_CODEC) {
-    throw new Error(
-      `The server answered with the '${payload.codec}' codec, which this package cannot read.`,
-    );
+  const type: unknown = payload.type;
+  if (type !== undefined && type !== null && typeof type !== 'string') {
+    throw new Error('The payload type must be a string.');
   }
 
-  let bytes = fromBase64(payload.value as string);
+  const codec: unknown = payload.codec;
+  if (codec !== undefined && codec !== null && typeof codec !== 'string') {
+    throw new Error('The payload codec must be a string.');
+  }
 
-  if (payload.format === PayloadFormat.Encrypted) {
+  if (typeof payload.value !== 'string') {
+    throw new Error('An encoded payload must carry its body as a Base64 string.');
+  }
+  let bytes = fromBase64(payload.value);
+
+  if (format === PayloadFormat.Encrypted) {
     if (!encryptionKey) {
       throw new Error('Encryption key is required to read an encrypted payload.');
     }
-    bytes = await decrypt(bytes, encryptionKey);
+    bytes = await decrypt(bytes, encryptionKey, bindingBytes(binding));
   }
 
-  return decodeBody(fromUtf8(await gunzip(bytes)));
+  if (!type) {
+    // The server writes a null result as zero bytes, uncompressed; gzip of nothing is read the same
+    // way. An empty body reads the same whatever the codec, so the codec is not checked here, as on
+    // .NET.
+    if ((await decompressBody(bytes)).length === 0) {
+      return null;
+    }
+    throw new Error('A payload that names no type must have an empty body.');
+  }
+
+  // The codec is outside the HMAC, so it is not echoed: whoever is on the way could put markup in it.
+  if (payload.codec && payload.codec !== JSON_CODEC) {
+    throw new Error('The server answered with a codec this package cannot read; it reads only json.');
+  }
+
+  return decodeBody(fromUtf8(await decompressBody(bytes)));
+}
+
+/**
+ * Decompresses a body that starts with the gzip header and passes any other through as it is, as
+ * `GzipPayloadCompressor` of Polhem.JsonRpc.Payload does (ADR-002, decision 2, in polhem-dev/polhem-jsonrpc).
+ *
+ * A writer may then leave a small body uncompressed once every reader accepts one; this package
+ * still compresses everything it writes. Zero bytes have no header and pass through. An
+ * uncompressed body is not held to the decompression limit: it is already in memory.
+ */
+async function decompressBody(bytes: Bytes): Promise<Bytes> {
+  return bytes[0] === 0x1f && bytes[1] === 0x8b ? gunzip(bytes) : bytes;
 }

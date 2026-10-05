@@ -7,7 +7,7 @@
  */
 
 export { decrypt, encrypt } from './crypto/aes-cbc-hmac.js';
-export { gunzip, gzip } from './crypto/gzip.js';
+export { MAX_DECOMPRESSED_LENGTH, gunzip, gzip } from './crypto/gzip.js';
 export {
   decryptSessionKey,
   decryptWithPrivateKey,
@@ -34,6 +34,7 @@ export {
   JSON_CODEC,
   JsonRpcError,
   JsonRpcErrorCode,
+  PayloadDirection,
   PayloadFormat,
   buildPayload,
   restorePayload,
@@ -43,6 +44,8 @@ export type {
   JsonRpcErrorBody,
   JsonRpcRequest,
   JsonRpcResponse,
+  PayloadBinding,
+  PayloadDirectionValue,
   PayloadFormatValue,
 } from './transport/envelope.js';
 export { JsonRpcTransport } from './transport/client.js';

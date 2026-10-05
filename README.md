@@ -134,13 +134,54 @@ A rejection at the server's HTTP gate (a missing or invalid API key, a malformed
 header) is also a `JsonRpcError`, with `httpStatus` set to the status it came with. It is not an
 `AuthenticationRequiredError`: signing in again would be refused the same way.
 
+### Encrypted payloads are bound to their call
+
+The HMAC of an encrypted payload also covers which way it travels and the JSON-RPC method of the call
+([ADR-003](https://github.com/polhem-dev/polhem-jsonrpc/blob/main/maintainers/adr/adr-003-bind-method-into-payload-hmac.md)
+in polhem-jsonrpc), so a captured payload cannot be replayed as another method, nor a result sent back
+as the parameters of a call. This needs a server on Polhem.JsonRpc 1.1.0 or later, which is Polhem 1.3.0 or later; an older server
+cannot read this client's encrypted calls, nor this client an older server's encrypted results. There
+is no fallback to the unbound form, since a client that accepted both could be downgraded.
+
+`PolhemClient` and `JsonRpcTransport` bind every call themselves. Code that uses the lower-level
+exports passes the binding explicitly, and an encrypted payload without one is refused:
+
+```ts
+import { PayloadDirection, PayloadFormat, buildPayload, restorePayload } from '@polhem/connector';
+
+const params = await buildPayload(request, PayloadFormat.Encrypted, typeName, sessionKey, {
+  direction: PayloadDirection.Request,
+  method: 'Employee.GetList',
+});
+// A result is bound to the method of the request it answers.
+const result = await restorePayload(response.result, PayloadFormat.Encrypted, sessionKey, {
+  direction: PayloadDirection.Response,
+  method: 'Employee.GetList',
+});
+```
+
+`encrypt` and `decrypt` take the binding as their third argument, `associatedData`: the direction byte
+(`1` for a request, `2` for a result) followed by the method in UTF-8.
+
+A result must also be in the format its request was sent in (decision 6 of the same ADR). An encrypted
+call refuses a plain or encoded result, before decoding anything, since anybody on the way could have
+written one; `restorePayload` therefore takes the format it expects as its second argument. A null
+result comes back in the request's format too, naming no type and with an empty body, and reads as
+`null` only once an encrypted one has passed its HMAC.
+
+A body that starts with the gzip header is decompressed with a limit, `MAX_DECOMPRESSED_LENGTH` (the
+default of `GzipPayloadCompressor` in Polhem.JsonRpc.Payload), and refused as soon as its output passes it. Any
+other body is read as it is, uncompressed, as the framework reads one; this package still compresses
+everything it writes.
+
 ### Not supported yet: replay-protection frames
 
 A deployment can require an anti-replay frame inside every Encoded and Encrypted payload
-(`ApiServiceOptions.RequireWireFrame` in the framework, off by default). This client does not write or
-read that frame yet, so against such a deployment its Encoded and Encrypted calls, `login` included,
-are rejected with `-32005` (`JsonRpcErrorCode.ReplayRejected`) until frames are supported. Plain calls
-are unaffected. Leave the switch off for deployments this client talks to.
+(`PayloadOptions.RequireFrame` of Polhem.JsonRpc.Payload, set with `AddPolhemPayload` in the framework, off by
+default). This client does not write or read that frame yet, so against such a deployment its Encoded and Encrypted
+calls, `login` included, are rejected with `-32005` (`JsonRpcErrorCode.ReplayRejected`) until frames are supported.
+Plain calls are refused too when they reach a method declared with `ApiReplayProtection.UniqueSequence` from a
+signed-in session (`-32602`). Leave the switch off for deployments this client talks to.
 
 ## Development
 

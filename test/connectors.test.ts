@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { PolhemClient } from '../src/connectors/client.js';
 import { WireTypeNames } from '../src/contracts/type-names.js';
 import type { JsonRpcRequest } from '../src/transport/envelope.js';
-import { PayloadFormat, buildPayload, restorePayload } from '../src/transport/envelope.js';
+import { PayloadDirection, PayloadFormat, buildPayload, restorePayload } from '../src/transport/envelope.js';
 
 const ENDPOINT = 'https://example.test/api';
 
@@ -42,7 +42,10 @@ describe('connectors', () => {
     const { fn, calls } = mockFetch(async (req) => ({
       jsonrpc: '2.0',
       id: req.id,
-      result: await buildPayload({}, PayloadFormat.Encrypted, WireTypeNames.GetListResponse, key),
+      result: await buildPayload({}, PayloadFormat.Encrypted, WireTypeNames.GetListResponse, key, {
+        direction: PayloadDirection.Response,
+        method: req.method,
+      }),
     }));
 
     const client = clientWith(fn);
@@ -82,7 +85,7 @@ describe('connectors', () => {
 
     const { fn, calls } = mockFetch(async (req) => {
       if (req.method === 'System.Login') {
-        const login = (await restorePayload(req.params)) as { clientPublicKey: string };
+        const login = (await restorePayload(req.params, PayloadFormat.Encoded)) as { clientPublicKey: string };
         const spki = Uint8Array.from(
           atob(login.clientPublicKey.replace(/-----[A-Z ]+-----/g, '').replace(/\s+/g, '')),
           (c) => c.charCodeAt(0),
@@ -121,7 +124,10 @@ describe('connectors', () => {
       return {
         jsonrpc: '2.0',
         id: req.id,
-        result: await buildPayload({}, PayloadFormat.Encrypted, WireTypeNames.GetListResponse, sessionKey),
+        result: await buildPayload({}, PayloadFormat.Encrypted, WireTypeNames.GetListResponse, sessionKey, {
+          direction: PayloadDirection.Response,
+          method: req.method,
+        }),
       };
     });
 

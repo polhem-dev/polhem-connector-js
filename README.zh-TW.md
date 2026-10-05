@@ -124,11 +124,47 @@ try {
 在伺服端 HTTP 閘門被拒絕（API key 缺少或無效、`Authorization` header 格式錯誤）也是 `JsonRpcError`，
 其 `httpStatus` 為回應的 HTTP 狀態碼。它不是 `AuthenticationRequiredError`：重新登入也會以同樣方式被拒絕。
 
+### 加密 payload 綁定所屬的呼叫
+
+加密 payload 的 HMAC 也涵蓋它的傳送方向與該呼叫的 JSON-RPC method
+（polhem-jsonrpc 的 [ADR-003](https://github.com/polhem-dev/polhem-jsonrpc/blob/main/maintainers/adr/adr-003-bind-method-into-payload-hmac.md)），
+因此截取到的 payload 無法改送給其他 method 重放，結果也無法被當成呼叫的參數送回。這需要伺服端使用 Polhem.JsonRpc 1.1.0
+以上，也就是 Polhem 1.3.0 以上；舊版伺服端讀不了本客戶端的加密呼叫，本客戶端也讀不了舊版伺服端的加密結果。不提供退回未綁定格式的機制，
+因為同時接受兩種格式的客戶端可能被降級。
+
+`PolhemClient` 與 `JsonRpcTransport` 會自行為每個呼叫加上綁定。使用較底層 export 的程式碼必須明確傳入綁定，
+沒有綁定的加密 payload 會被拒絕：
+
+```ts
+import { PayloadDirection, PayloadFormat, buildPayload, restorePayload } from '@polhem/connector';
+
+const params = await buildPayload(request, PayloadFormat.Encrypted, typeName, sessionKey, {
+  direction: PayloadDirection.Request,
+  method: 'Employee.GetList',
+});
+// A result is bound to the method of the request it answers.
+const result = await restorePayload(response.result, PayloadFormat.Encrypted, sessionKey, {
+  direction: PayloadDirection.Response,
+  method: 'Employee.GetList',
+});
+```
+
+`encrypt` 與 `decrypt` 的第三個參數 `associatedData` 即為綁定：方向位元組（請求為 `1`、結果為 `2`），
+後接 method 的 UTF-8。
+
+結果也必須與請求送出時的格式相同（同一份 ADR 的決策 6）。加密呼叫會在解碼任何內容之前，拒絕 plain 或 encoded 的結果，
+因為傳輸路徑上的任何人都可能寫出這種結果；因此 `restorePayload` 的第二個參數是它預期的格式。null 結果同樣以請求的格式
+回傳：不標示 type、本文為空；加密的 null 結果要先通過 HMAC 驗證，才會讀成 `null`。
+
+以 gzip 標頭開頭的本文解壓縮時有上限 `MAX_DECOMPRESSED_LENGTH`（與 Polhem.JsonRpc.Payload 的 `GzipPayloadCompressor` 預設值相同），
+輸出一超過就拒絕。其他本文視為未壓縮，照原樣讀取，與框架的讀法相同；本套件寫出的內容仍一律壓縮。
+
 ### 尚未支援：防重放 frame
 
-部署可以要求每個 Encoded 與 Encrypted payload 內都帶防重放 frame（框架的 `ApiServiceOptions.RequireWireFrame`，
-預設關閉）。本客戶端目前既不寫入也不讀取這個 frame，因此在這類部署上，它的 Encoded 與 Encrypted 呼叫（包括 `login`）
-會以 `-32005`（`JsonRpcErrorCode.ReplayRejected`）被拒絕，直到支援 frame 為止。Plain 呼叫不受影響。
+部署可以要求每個 Encoded 與 Encrypted payload 內都帶防重放 frame（Polhem.JsonRpc.Payload 的 `PayloadOptions.RequireFrame`，
+框架以 `AddPolhemPayload` 設定，預設關閉）。本客戶端目前既不寫入也不讀取這個 frame，因此在這類部署上，它的 Encoded 與
+Encrypted 呼叫（包括 `login`）會以 `-32005`（`JsonRpcErrorCode.ReplayRejected`）被拒絕，直到支援 frame 為止。
+已登入的工作階段以 Plain 呼叫宣告為 `ApiReplayProtection.UniqueSequence` 的方法時，也會被拒絕（`-32602`）。
 與本客戶端連線的部署請保持這個開關關閉。
 
 ## 開發
