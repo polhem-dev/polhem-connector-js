@@ -130,6 +130,11 @@ export async function decrypt(
     throw new Error('HMAC validation failed.');
   }
 
+  // The layout allows up to 32 bytes, as the framework's does, but AES-CBC takes only 16; refuse the
+  // rest with the framework's message rather than the platform's.
+  if (ivLength !== 16) {
+    throw new Error('Invalid IV length.');
+  }
   const key = await importAesKey(aesKey, 'decrypt');
   return new Uint8Array(await crypto.subtle.decrypt({ name: 'AES-CBC', iv }, key, cipher));
 }

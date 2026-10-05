@@ -23,6 +23,13 @@ describe('gzip', () => {
     await expect(gunzip(compressed, 999)).rejects.toThrow(/more than 999 bytes/);
   });
 
+  it('refuses a limit that is not a positive number', async () => {
+    const compressed = await gzip(new Uint8Array(10));
+    for (const limit of [Number.NaN, 0, -1, Number.POSITIVE_INFINITY]) {
+      await expect(gunzip(compressed, limit)).rejects.toThrow(RangeError);
+    }
+  });
+
   it('limits output to 50 MiB by default, as the framework does', async () => {
     expect(MAX_DECOMPRESSED_LENGTH).toBe(50 * 1024 * 1024);
     const atLimit = await gzip(new Uint8Array(MAX_DECOMPRESSED_LENGTH));

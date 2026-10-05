@@ -115,6 +115,30 @@ describe('AES-CBC-HMAC', () => {
     await expect(decrypt(cipher, combinedKey, untyped)).rejects.toThrow(/Associated data is required/);
   });
 
+  it('refuses an authentic payload whose IV is not 16 bytes, with the framework message', async () => {
+    const ad = fromHex(REQUEST_AD_HEX);
+    const own = await encrypt(utf8('x'), combinedKey, ad);
+    const view = new DataView(own.buffer, own.byteOffset, own.byteLength);
+    const cipherLength = view.getInt32(20, true);
+    const cipher = own.subarray(24, 24 + cipherLength);
+    const header = new Uint8Array(8 + 32);
+    const headerView = new DataView(header.buffer);
+    headerView.setInt32(0, 32, true);
+    header.set(own.subarray(4, 20), 4);
+    headerView.setInt32(4 + 32, cipherLength, true);
+    const body = concat(header, cipher);
+    const hmacKey = await crypto.subtle.importKey(
+      'raw',
+      combinedKey.subarray(32),
+      { name: 'HMAC', hash: 'SHA-256' },
+      false,
+      ['sign'],
+    );
+    const tag = new Uint8Array(await crypto.subtle.sign('HMAC', hmacKey, concat(body, ad)));
+
+    await expect(decrypt(concat(body, tag), combinedKey, ad)).rejects.toThrow('Invalid IV length.');
+  });
+
   it('rejects a combined key of the wrong size', async () => {
     await expect(encrypt(utf8('x'), new Uint8Array(32), requestAd)).rejects.toThrow(/64 bytes/);
   });

@@ -192,6 +192,10 @@ export async function buildPayload(
   encryptionKey?: Bytes,
   binding?: PayloadBinding,
 ): Promise<ApiPayload> {
+  // A caller without type checks could pass '2', which would otherwise be sent as Encoded, in clear.
+  if (!isPayloadFormat(format)) {
+    throw new Error('The payload format must be 0, 1 or 2.');
+  }
   if (format === PayloadFormat.Plain) {
     // A Plain payload carries the object itself and needs no type name — the server resolves the
     // target type from the business object's method signature instead.
@@ -317,10 +321,9 @@ export async function restorePayload(
     throw new Error('A payload that names no type must have an empty body.');
   }
 
+  // The codec is outside the HMAC, so it is not echoed: whoever is on the way could put markup in it.
   if (payload.codec && payload.codec !== JSON_CODEC) {
-    throw new Error(
-      `The server answered with the '${payload.codec}' codec, which this package cannot read.`,
-    );
+    throw new Error('The server answered with a codec this package cannot read; it reads only json.');
   }
 
   return decodeBody(fromUtf8(await decompressBody(bytes)));
@@ -328,7 +331,7 @@ export async function restorePayload(
 
 /**
  * Decompresses a body that starts with the gzip header and passes any other through as it is, as
- * the framework's `GzipPayloadCompressor` does (ADR-002, decision 2, in polhem-dev/polhem-jsonrpc).
+ * `GzipPayloadCompressor` of Polhem.JsonRpc.Payload does (ADR-002, decision 2, in polhem-dev/polhem-jsonrpc).
  *
  * A writer may then leave a small body uncompressed once every reader accepts one; this package
  * still compresses everything it writes. Zero bytes have no header and pass through. An

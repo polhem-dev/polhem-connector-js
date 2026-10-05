@@ -1,5 +1,5 @@
 /**
- * gzip compression, matching the framework's `GzipPayloadCompressor`.
+ * gzip compression, matching `GzipPayloadCompressor` of Polhem.JsonRpc.Payload.
  *
  * Uses the platform's own streams rather than a bundled implementation: `CompressionStream` is
  * available in every browser this package targets and in Node 18+, so the compressed bytes are
@@ -19,8 +19,8 @@ export async function gzip(data: Bytes): Promise<Bytes> {
 }
 
 /**
- * The most a payload may decompress to: 50 MiB, the default of the framework's
- * `GzipPayloadCompressor`.
+ * The most a payload may decompress to: 50 MiB, the default of `GzipPayloadCompressor` in
+ * Polhem.JsonRpc.Payload.
  */
 export const MAX_DECOMPRESSED_LENGTH = 50 * 1024 * 1024;
 
@@ -31,9 +31,14 @@ export const MAX_DECOMPRESSED_LENGTH = 50 * 1024 * 1024;
  * bound is refused before it is held in memory.
  *
  * @param maxLength The most the output may be, in bytes.
- * @throws When the output would exceed `maxLength`, or the input is not valid gzip.
+ * @throws When `maxLength` is not a positive number, the output would exceed it, or the input is
+ *   not valid gzip.
  */
 export async function gunzip(data: Bytes, maxLength = MAX_DECOMPRESSED_LENGTH): Promise<Bytes> {
+  // NaN would compare false against every total and lift the limit.
+  if (!(Number.isFinite(maxLength) && maxLength > 0)) {
+    throw new RangeError('The decompression limit must be a positive number of bytes.');
+  }
   const reader = new Blob([data as BlobPart])
     .stream()
     .pipeThrough(new DecompressionStream('gzip'))

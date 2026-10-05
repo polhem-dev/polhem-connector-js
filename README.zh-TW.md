@@ -129,7 +129,7 @@ try {
 加密 payload 的 HMAC 也涵蓋它的傳送方向與該呼叫的 JSON-RPC method
 （polhem-jsonrpc 的 [ADR-003](https://github.com/polhem-dev/polhem-jsonrpc/blob/main/maintainers/adr/adr-003-bind-method-into-payload-hmac.md)），
 因此截取到的 payload 無法改送給其他 method 重放，結果也無法被當成呼叫的參數送回。這需要伺服端使用 Polhem.JsonRpc 1.1.0
-以上；舊版伺服端讀不了本客戶端的加密呼叫，本客戶端也讀不了舊版伺服端的加密結果。不提供退回未綁定格式的機制，
+以上，也就是 Polhem 1.3.0 以上；舊版伺服端讀不了本客戶端的加密呼叫，本客戶端也讀不了舊版伺服端的加密結果。不提供退回未綁定格式的機制，
 因為同時接受兩種格式的客戶端可能被降級。
 
 `PolhemClient` 與 `JsonRpcTransport` 會自行為每個呼叫加上綁定。使用較底層 export 的程式碼必須明確傳入綁定，
@@ -156,7 +156,7 @@ const result = await restorePayload(response.result, PayloadFormat.Encrypted, se
 因為傳輸路徑上的任何人都可能寫出這種結果；因此 `restorePayload` 的第二個參數是它預期的格式。null 結果同樣以請求的格式
 回傳：不標示 type、本文為空；加密的 null 結果要先通過 HMAC 驗證，才會讀成 `null`。
 
-以 gzip 標頭開頭的本文解壓縮時有上限 `MAX_DECOMPRESSED_LENGTH`（與框架 `GzipPayloadCompressor` 的預設值相同），
+以 gzip 標頭開頭的本文解壓縮時有上限 `MAX_DECOMPRESSED_LENGTH`（與 Polhem.JsonRpc.Payload 的 `GzipPayloadCompressor` 預設值相同），
 輸出一超過就拒絕。其他本文視為未壓縮，照原樣讀取，與框架的讀法相同；本套件寫出的內容仍一律壓縮。
 
 ### 尚未支援：防重放 frame

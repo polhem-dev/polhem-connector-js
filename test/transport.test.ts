@@ -158,7 +158,36 @@ describe('JSON-RPC transport', () => {
       value: 'AAAA',
     };
 
-    await expect(restorePayload(payload, PayloadFormat.Encoded)).rejects.toThrow(/messagepack/);
+    await expect(restorePayload(payload, PayloadFormat.Encoded)).rejects.toThrow(/reads only json/);
+  });
+
+  it('does not echo the codec it refuses', async () => {
+    const payload: ApiPayload = {
+      format: PayloadFormat.Encoded,
+      codec: '<img src=x onerror=alert(1)>',
+      type: 'Some.Type, Some.Asm',
+      value: 'AAAA',
+    };
+
+    const error = await restorePayload(payload, PayloadFormat.Encoded).catch((e: Error) => e);
+    expect(error).toBeInstanceOf(Error);
+    expect((error as Error).message).not.toContain('<img');
+  });
+
+  it('refuses an encoded body that is not a Base64 string', async () => {
+    const payload = { format: PayloadFormat.Encoded, codec: 'json', type: 'Some.Type, Some.Asm', value: 42 };
+
+    await expect(restorePayload(payload as unknown as ApiPayload, PayloadFormat.Encoded)).rejects.toThrow(
+      /Base64 string/,
+    );
+  });
+
+  it('refuses to build a payload in a format that is not 0, 1 or 2', async () => {
+    for (const format of ['2', 3, 1.5, null]) {
+      await expect(
+        buildPayload({}, format as unknown as PayloadFormatValue, 'T, A', sessionKey),
+      ).rejects.toThrow(/must be 0, 1 or 2/);
+    }
   });
 
   it('refuses to encode without the pieces the server requires', async () => {

@@ -139,7 +139,7 @@ header) is also a `JsonRpcError`, with `httpStatus` set to the status it came wi
 The HMAC of an encrypted payload also covers which way it travels and the JSON-RPC method of the call
 ([ADR-003](https://github.com/polhem-dev/polhem-jsonrpc/blob/main/maintainers/adr/adr-003-bind-method-into-payload-hmac.md)
 in polhem-jsonrpc), so a captured payload cannot be replayed as another method, nor a result sent back
-as the parameters of a call. This needs a server on Polhem.JsonRpc 1.1.0 or later; an older server
+as the parameters of a call. This needs a server on Polhem.JsonRpc 1.1.0 or later, which is Polhem 1.3.0 or later; an older server
 cannot read this client's encrypted calls, nor this client an older server's encrypted results. There
 is no fallback to the unbound form, since a client that accepted both could be downgraded.
 
@@ -170,7 +170,7 @@ result comes back in the request's format too, naming no type and with an empty 
 `null` only once an encrypted one has passed its HMAC.
 
 A body that starts with the gzip header is decompressed with a limit, `MAX_DECOMPRESSED_LENGTH` (the
-default of the framework's `GzipPayloadCompressor`), and refused as soon as its output passes it. Any
+default of `GzipPayloadCompressor` in Polhem.JsonRpc.Payload), and refused as soon as its output passes it. Any
 other body is read as it is, uncompressed, as the framework reads one; this package still compresses
 everything it writes.
 
