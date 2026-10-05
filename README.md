@@ -177,10 +177,11 @@ everything it writes.
 ### Not supported yet: replay-protection frames
 
 A deployment can require an anti-replay frame inside every Encoded and Encrypted payload
-(`ApiServiceOptions.RequireWireFrame` in the framework, off by default). This client does not write or
-read that frame yet, so against such a deployment its Encoded and Encrypted calls, `login` included,
-are rejected with `-32005` (`JsonRpcErrorCode.ReplayRejected`) until frames are supported. Plain calls
-are unaffected. Leave the switch off for deployments this client talks to.
+(`PayloadOptions.RequireFrame` of Polhem.JsonRpc.Payload, set with `AddPolhemPayload` in the framework, off by
+default). This client does not write or read that frame yet, so against such a deployment its Encoded and Encrypted
+calls, `login` included, are rejected with `-32005` (`JsonRpcErrorCode.ReplayRejected`) until frames are supported.
+Plain calls are refused too when they reach a method declared with `ApiReplayProtection.UniqueSequence` from a
+signed-in session (`-32602`). Leave the switch off for deployments this client talks to.
 
 ## Development
 

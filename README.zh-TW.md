@@ -161,9 +161,10 @@ const result = await restorePayload(response.result, PayloadFormat.Encrypted, se
 
 ### 尚未支援：防重放 frame
 
-部署可以要求每個 Encoded 與 Encrypted payload 內都帶防重放 frame（框架的 `ApiServiceOptions.RequireWireFrame`，
-預設關閉）。本客戶端目前既不寫入也不讀取這個 frame，因此在這類部署上，它的 Encoded 與 Encrypted 呼叫（包括 `login`）
-會以 `-32005`（`JsonRpcErrorCode.ReplayRejected`）被拒絕，直到支援 frame 為止。Plain 呼叫不受影響。
+部署可以要求每個 Encoded 與 Encrypted payload 內都帶防重放 frame（Polhem.JsonRpc.Payload 的 `PayloadOptions.RequireFrame`，
+框架以 `AddPolhemPayload` 設定，預設關閉）。本客戶端目前既不寫入也不讀取這個 frame，因此在這類部署上，它的 Encoded 與
+Encrypted 呼叫（包括 `login`）會以 `-32005`（`JsonRpcErrorCode.ReplayRejected`）被拒絕，直到支援 frame 為止。
+已登入的工作階段以 Plain 呼叫宣告為 `ApiReplayProtection.UniqueSequence` 的方法時，也會被拒絕（`-32602`）。
 與本客戶端連線的部署請保持這個開關關閉。
 
 ## 開發
