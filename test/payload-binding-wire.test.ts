@@ -70,7 +70,9 @@ async function tagMatches(body: Uint8Array<ArrayBuffer>, direction: number, meth
 
 describe('direction byte and method encoding on the wire', () => {
   describe('writer', () => {
-    it.each(['Employee.GetList', 'Lager.Übersicht'])(
+    // The third name is the second one decomposed (U+0308 after U): ADR-003 binds the method with no
+    // normalization, so a writer that normalized it would tag other bytes.
+    it.each(['Employee.GetList', 'Lager.Übersicht', 'Lager.U\u0308bersicht'])(
       'tags the parameters of %s over 0x01 and the method in UTF-8',
       async (method) => {
         const { fn, calls } = mockFetch((req) => ({
