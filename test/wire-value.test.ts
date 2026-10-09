@@ -71,8 +71,8 @@ describe('wire value envelope', () => {
     expect(() => decodeWireValue(['Some.Type, Some.Assembly', {}])).toThrow(/discriminator/);
   });
 
-  it('rejects an unsupported tagged payload rather than sending something wrong', () => {
-    expect(() => decodeWireValue([WireValueCode.DataTable, {}])).toThrow(/DataTable/);
-    expect(() => encodeWireValue(tag(WireValueCode.DataTable, {}))).not.toThrow();
+  it('refuses a DataTable envelope without the table outline rather than guessing', () => {
+    expect(() => decodeWireValue([WireValueCode.DataTable, {}])).toThrow(/DataTable must carry/);
+    expect(() => encodeWireValue(tag(WireValueCode.DataTable, {}))).toThrow(/DataTable must carry/);
   });
 });

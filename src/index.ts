@@ -29,6 +29,23 @@ export {
 export type { TaggedWireValue, WireValue, WireValueCodeValue } from './codec/wire-value.js';
 
 export { encodeBody, decodeBody } from './codec/json-body.js';
+
+export {
+  decodeDataSet,
+  decodeDataTable,
+  encodeDataSet,
+  encodeDataTable,
+} from './data/data-table.js';
+export type {
+  DataRow,
+  DataRowState,
+  DataRowValues,
+  DataSet,
+  DataTable,
+  Decoded,
+} from './data/data-table.js';
+export { addRow, deleteRow, hasChanges, setCell } from './data/edit.js';
+export type { CellInput, CellValue } from './data/cells.js';
 export {
   AuthenticationRequiredError,
   JSON_CODEC,
@@ -52,6 +69,7 @@ export { JsonRpcTransport } from './transport/client.js';
 export type { CallOptions, TransportOptions } from './transport/client.js';
 
 export { PolhemClient } from './connectors/client.js';
+export type { DateTimeFormatOptions } from './connectors/client.js';
 export { SystemConnector } from './connectors/system.js';
 export { FormConnector } from './connectors/form.js';
 export { WireTypeNames } from './contracts/type-names.js';
