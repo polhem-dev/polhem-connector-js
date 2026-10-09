@@ -19,6 +19,7 @@ codec 對照伺服端公開的 wire fixtures，整個堆疊則對執行中的 ho
 | JSON body codec（wire value 封套） | ✅ 以框架的 wire fixtures 驗證 |
 | JSON-RPC transport（封套、管線、HTTP） | ✅ |
 | 具型別的 connector（`login`、`getList`…） | ✅ |
+| DataTable／DataSet（解碼、修改、存檔） | ✅ 以框架的 wire fixtures 驗證 |
 | API 合約型別，由框架產生 | ✅ 已同步，CI 檢查 |
 
 ## 為什麼有這個套件
@@ -97,6 +98,96 @@ decimal，沒有辦法另外指定。
 
 所有訊息型別都以 `Contracts` 匯出（`Contracts.GetListRequest`…），由框架產生。選填成員在 wire 上可能不出現，
 不出現即代表 .NET 的預設值（`0`、`false`、列舉的第一個成員、空 Guid）。
+
+### 資料表與資料集
+
+`getList` 與 `getLookup` 回傳 `table`；`getData`、`getNewData` 與 `save` 回傳 `dataSet`。兩者抵達時都已解碼：
+形狀與伺服端相同（`columns`、`primaryKeys`、`rows`，以及每列的 `state`、`current`、`original`），每一格都已是
+其欄位型別對應的值：
+
+| 欄位型別 | 儲存格 |
+|----------|--------|
+| `Decimal`、`Currency` | `string`，逐字保留。轉成 JS number 會失去精度 |
+| `Long` | `bigint` |
+| `Short`、`Integer`、`AutoIncrement` | `number` |
+| `Boolean` | `boolean` |
+| `DateTime` | `Date`，以 UTC 解析 |
+| `Date` | `'YYYY-MM-DD'`。日曆日不是時間點，轉成 `Date` 會在某些時區偏移一天 |
+| `Guid`、`Time`、`String`、`Text` | `string` |
+| `Binary` | `Uint8Array` |
+
+儲存格的 `null` 就是伺服端的 `DBNull`；設定儲存格的函式也接受以 `DB_NULL` 表示它。每列都帶齊所有欄位，
+所以儲存格不會是 `undefined`。
+
+資料是唯讀的一般物件。以 `setCell`、`addRow`、`deleteRow` 修改，它們回傳新的資料表，並依 `save` 的需要維護每列的
+`state` 與 `original`：
+
+```ts
+import { addRow, deleteRow, hasChanges, setCell } from '@polhem/connector';
+
+const orders = client.form('Order');
+const { dataSet } = await orders.getData({ rowId });
+let [master, detail] = dataSet!.tables;
+
+master = setCell(master!, master!.rows[0]!, 'amount', '100.50'); // Unchanged → Modified
+detail = addRow(detail!, { item_no: 'A-01', qty: 2 });          // Added
+detail = deleteRow(detail, detail.rows[0]!);                    // Deleted
+
+const changed = { ...dataSet!, tables: [master, detail] };
+if (hasChanges(changed)) await orders.save({ dataSet: changed });
+```
+
+| 列狀態 | `setCell` | `deleteRow` |
+|--------|-----------|-------------|
+| `Unchanged` | 變成 `Modified`；`original` 保留讀進來時的值 | 變成 `Deleted`，只保留 `original` |
+| `Modified` | 維持 `Modified`；`original` 不變 | 變成 `Deleted`，保留讀進來時的值，而不是改過的值 |
+| `Added` | 維持 `Added` | 直接移除：伺服端從沒見過這一列 |
+| `Deleted` | 擲錯 | 擲錯 |
+
+以列物件本身指定哪一列，不用 index。每次修改都會產生新的列物件，所以要從上一次修改回傳的資料表取列：
+修改之前的列已不在表裡，傳進去會擲錯，而不是改到別列。在 React 裡，同一個事件對同一張表更新兩次時要注意：
+第二次 `setT(prev => setCell(prev, row, …))` 拿到的 `prev` 裡已經沒有 `row`。欄位不存在、值不符欄位型別
+（`Decimal` 要字串、`Long` 要 bigint），以及修改伺服端已有的列的 `sys_rowid`（伺服端會拒絕）時，這些函式也會擲錯。
+
+`DateTime` 要以登入使用者的時區顯示（`login` 會記下），不是裝置的時區。`toLocaleString()` 與 `getHours()`
+用的是裝置時區：帳號設成東京、人在台北用筆電，看到的會是台北時間：
+
+```ts
+client.formatDateTime(hiredAt);                         // 使用者的時區與文化特性
+client.formatDateTime(hiredAt, { dateStyle: 'short' }); // Intl 選項，時區固定
+client.timeZone;                                        // 'Asia/Tokyo'，給需要時區的元件
+```
+
+`DateTime` 儲存格請當成唯讀：伺服端存檔時自己設定這些值，不採用用戶端送來的值。
+
+#### UI 專案裡的 `DataTable` 名稱
+
+PrimeReact（`import { DataTable } from 'primereact/datatable'`）與 PrimeVue
+（`import DataTable from 'primevue/datatable'`）的表格元件都叫 `DataTable`。在用到它們的檔案裡，
+以別的名稱匯入本套件的型別：
+
+```ts
+import type { DataTable as PolhemDataTable } from '@polhem/connector';
+```
+
+wire 形狀留在 `Contracts`（`Contracts.DataTable`、`Contracts.DataSet`），connector 的方法不接收也不回傳它們。
+自行處理 wire 形狀的程式碼可用 `decodeDataTable`、`encodeDataTable`、`decodeDataSet`、`encodeDataSet`；
+`object` 型別成員裡的 DataTable，`decodeWireValue` 會解成同樣的解碼後形式。
+
+#### 從 .NET 的 `System.Data` 過來
+
+名稱與 .NET 用戶端一致，API 不一致：這裡的資料表是資料，修改透過函式。
+
+| `System.Data` | `@polhem/connector` |
+|---------------|---------------------|
+| `table.Rows[0]["amount"] = 100.5m;` | `t = setCell(t, t.rows[0]!, 'amount', '100.5');` |
+| `table.Rows.Add(row)` | `t = addRow(t, { … })` |
+| `row.Delete()` | `t = deleteRow(t, row)` |
+| `row.RowState` | `row.state` |
+| `row["amount", DataRowVersion.Original]` | `row.original?.['amount']` |
+| `dataSet.HasChanges()` | `hasChanges(dataSet)` |
+| `DBNull.Value` | `null` |
+| `AcceptChanges()` | 沒有對應；存檔後以 `getData` 重新讀取 |
 
 ### Session 與錯誤
 
@@ -181,7 +272,7 @@ npm run contracts:check  # 同步進來的 API 合約仍與框架一致
 變更如何進入 `main`、框架合約變動時該怎麼做，見 [CONTRIBUTING.zh-TW.md](CONTRIBUTING.zh-TW.md)。
 
 `npm test` 完全不連網：wire 相容性以 .NET 實作產生的固定向量檢查。`npm run test:wire` 是範圍更廣的檢查——
-它下載框架公開的 wire fixtures，除了 `value-datatable` 之外的 value 樣本逐一做 round-trip；`value-datatable` 則斷言解碼 `DataTable` 會被拒絕，因為目前尚未支援。這些 fixtures **不入本 repo 的版控**；
+它下載框架公開的 wire fixtures，所有 value 樣本以及頂層的 `datatable`、`dataset` 樣本逐一做 round-trip，並比對重新編碼後的 JSON 文字與原文。這些 fixtures **不入本 repo 的版控**；
 複製一份就成了 wire 格式的第二個權威來源，而且會漂移。
 
 ### 對真實後端測試

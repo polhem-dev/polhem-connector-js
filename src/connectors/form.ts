@@ -1,12 +1,21 @@
 import type { JsonRpcTransport } from '../transport/client.js';
 import { WireTypeNames } from '../contracts/type-names.js';
 import type * as Contracts from '../contracts/messages.js';
+import {
+  decodeDataSet,
+  decodeDataTable,
+  encodeDataSet,
+  type Decoded,
+} from '../data/data-table.js';
 
 /**
  * CRUD calls against one form.
  *
  * Method names are `<progId>.<action>` — the progId identifies the form, and the server resolves it
  * to a business object through its own registry. One connector is bound to one form.
+ *
+ * Tables and data sets come back decoded (`DataTable`, `DataSet`): each cell is already the value its
+ * column type calls for, and `save` encodes them back. No method here exposes their wire shape.
  */
 export class FormConnector {
   readonly #transport: JsonRpcTransport;
@@ -35,44 +44,72 @@ export class FormConnector {
    * unmarked decimal arrives as a string and an unmarked Guid as plain text. Marked values need an
    * encoded or encrypted call, which is the default once signed in; a Plain call refuses them.
    */
-  async getList(request: Contracts.GetListRequest = {}): Promise<Contracts.GetListResponse> {
-    return this.#call<Contracts.GetListResponse>('GetList', request, WireTypeNames.GetListRequest);
+  async getList(
+    request: Decoded<Contracts.GetListRequest> = {},
+  ): Promise<Decoded<Contracts.GetListResponse>> {
+    const response = await this.#call<Contracts.GetListResponse>(
+      'GetList',
+      request,
+      WireTypeNames.GetListRequest,
+    );
+    return withTable(response);
   }
 
   /** Reads one row by its key. */
-  async getData(request: Contracts.GetDataRequest): Promise<Contracts.GetDataResponse> {
-    return this.#call<Contracts.GetDataResponse>('GetData', request, WireTypeNames.GetDataRequest);
+  async getData(
+    request: Decoded<Contracts.GetDataRequest>,
+  ): Promise<Decoded<Contracts.GetDataResponse>> {
+    const response = await this.#call<Contracts.GetDataResponse>(
+      'GetData',
+      request,
+      WireTypeNames.GetDataRequest,
+    );
+    return withDataSet(response);
   }
 
   /** Builds an unsaved row carrying the form's defaults. */
   async getNewData(
-    request: Contracts.GetNewDataRequest = {},
-  ): Promise<Contracts.GetNewDataResponse> {
-    return this.#call<Contracts.GetNewDataResponse>(
+    request: Decoded<Contracts.GetNewDataRequest> = {},
+  ): Promise<Decoded<Contracts.GetNewDataResponse>> {
+    const response = await this.#call<Contracts.GetNewDataResponse>(
       'GetNewData',
       request,
       WireTypeNames.GetNewDataRequest,
     );
+    return withDataSet(response);
   }
 
   /** Reads the rows a lookup field offers. */
-  async getLookup(request: Contracts.GetLookupRequest): Promise<Contracts.GetLookupResponse> {
-    return this.#call<Contracts.GetLookupResponse>(
+  async getLookup(
+    request: Decoded<Contracts.GetLookupRequest>,
+  ): Promise<Decoded<Contracts.GetLookupResponse>> {
+    const response = await this.#call<Contracts.GetLookupResponse>(
       'GetLookup',
       request,
       WireTypeNames.GetLookupRequest,
     );
+    return withTable(response);
   }
 
   /**
    * Persists a change set.
    *
-   * WARNING: the server applies rows by their `state`, so a DataSet round-tripped through a plain
-   * `JSON.parse` — which drops that metadata — saves nothing. Send back what `getData` or
-   * `getNewData` returned, with the state fields intact.
+   * The server applies each row by its `state`, and finds a `Modified` or `Deleted` row by its
+   * `original` values. Send back what `getData` or `getNewData` returned, changed through `setCell`,
+   * `addRow` and `deleteRow`, which keep both right. Changing a row's values in place leaves its
+   * state `Unchanged`, and the server then saves nothing for it.
    */
-  async save(request: Contracts.SaveRequest): Promise<Contracts.SaveResponse> {
-    return this.#call<Contracts.SaveResponse>('Save', request, WireTypeNames.SaveRequest);
+  async save(request: Decoded<Contracts.SaveRequest>): Promise<Decoded<Contracts.SaveResponse>> {
+    const { dataSet, ...rest } = request;
+    const wireRequest: Contracts.SaveRequest = dataSet
+      ? { ...rest, dataSet: encodeDataSet(dataSet) }
+      : rest;
+    const response = await this.#call<Contracts.SaveResponse>(
+      'Save',
+      wireRequest,
+      WireTypeNames.SaveRequest,
+    );
+    return withDataSet(response);
   }
 
   /** Deletes a row by its key. */
@@ -83,4 +120,18 @@ export class FormConnector {
   #call<T>(action: string, value: unknown, typeName: string): Promise<T> {
     return this.#transport.execute<T>(`${this.#progId}.${action}`, value, { typeName });
   }
+}
+
+function withTable<T extends { table?: Contracts.DataTable }>(response: T): Decoded<T> {
+  // A null result stays null, as it did before decoding was added.
+  if (response == null) return response as Decoded<T>;
+  const { table, ...rest } = response;
+  return (table ? { ...rest, table: decodeDataTable(table) } : rest) as Decoded<T>;
+}
+
+function withDataSet<T extends { dataSet?: Contracts.DataSet }>(response: T): Decoded<T> {
+  // A null result stays null, as it did before decoding was added.
+  if (response == null) return response as Decoded<T>;
+  const { dataSet, ...rest } = response;
+  return (dataSet ? { ...rest, dataSet: decodeDataSet(dataSet) } : rest) as Decoded<T>;
 }

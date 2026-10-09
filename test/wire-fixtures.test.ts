@@ -3,6 +3,14 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { WireValueCode, decodeWireValue, encodeWireValue, tag, type WireValueCodeValue } from '../src/codec/wire-value.js';
+import type * as Contracts from '../src/contracts/messages.js';
+import {
+  decodeDataSet,
+  decodeDataTable,
+  encodeDataSet,
+  encodeDataTable,
+  type DataTable,
+} from '../src/data/data-table.js';
 
 /**
  * Verifies this package against the golden samples published by the framework repository.
@@ -44,9 +52,7 @@ describe('wire fixtures', () => {
         .filter((v): v is [number, unknown] => Array.isArray(v))
         .map(([code]) => code),
     );
-    // Every discriminator the framework can put on this wire now has a sample, DataTable included
-    // — the sample arrived before the support did, which is what the `value-datatable` assertion
-    // below is about.
+    // Every discriminator the framework can put on this wire has a sample, DataTable included.
     expect(codes.size).toBeGreaterThanOrEqual(20);
   });
 
@@ -65,19 +71,9 @@ describe('wire fixtures', () => {
       const [code] = raw as [WireValueCodeValue, unknown];
 
       if (fixture.case === 'value-datatable') {
-        // NOT YET SUPPORTED, asserted rather than skipped.
-        //
-        // A DataTable is the core cross-layer DTO of the framework — an ERP form's data *is* a
-        // DataTable — so this gap is the line between "can render a form" and "cannot". Support
-        // has to cover two shapes: this enveloped one inside an object-typed member, and the
-        // top-level `datatable` body, whose cells carry no discriminator.
-        //
-        // Pinning the refusal, instead of skipping the case, keeps the gap visible in the one
-        // place a developer of this package will look, and makes the day it gets implemented
-        // fail here — forcing whoever does it to come back and replace this with a real
-        // round-trip assertion. A skipped test would go quiet instead.
+        // Compared as text, so key order and every digit of the extreme values count too.
         expect(code).toBe(WireValueCode.DataTable);
-        expect(() => decodeWireValue(raw)).toThrow(/DataTable .* not supported yet/);
+        expect(JSON.stringify(encodeWireValue(decodeWireValue(raw)))).toBe(JSON.stringify(raw));
         return;
       }
 
@@ -131,5 +127,57 @@ describe('wire fixtures', () => {
     expect(typeof decoded).toBe('bigint');
     expect((decoded as bigint).toString()).toBe(value);
     expect(Number(value).toString()).not.toBe(value);
+  });
+
+  describe('DataTable and DataSet', () => {
+    const body = (name: string) => fixtures.find((f) => f.case === name)!.body;
+
+    it('found the top-level samples, which no value-* case covers', () => {
+      expect(fixtures.map((f) => f.case)).toEqual(expect.arrayContaining(['datatable', 'dataset']));
+    });
+
+    it('round-trips the top-level datatable sample to the same JSON text', () => {
+      const raw = body('datatable') as unknown as Contracts.DataTable;
+      expect(JSON.stringify(encodeDataTable(decodeDataTable(raw)))).toBe(JSON.stringify(raw));
+    });
+
+    it('round-trips the top-level dataset sample to the same JSON text', () => {
+      const raw = body('dataset') as unknown as Contracts.DataSet;
+      expect(JSON.stringify(encodeDataSet(decodeDataSet(raw)))).toBe(JSON.stringify(raw));
+    });
+
+    it('decodes the cells by column type, keeping the extreme values digit for digit', () => {
+      const raw = body('datatable') as unknown as Contracts.DataTable;
+      const table = decodeDataTable(raw);
+      const [unchanged, modified, added] = table.rows;
+
+      expect(unchanged!.current!['amount']).toBe('79228162514264337593543950335');
+      expect(modified!.current!['amount']).toBe('0.0000000000000000000000000001');
+      expect(unchanged!.current!['ref_no']).toBe(9007199254740993n);
+      expect(added!.current!['ref_no']).toBe(9223372036854775807n);
+      // Through a JS number, neither survives.
+      expect(String(Number('9007199254740993'))).not.toBe('9007199254740993');
+
+      // A DateTime cell has no zone marker and is UTC; read as local time it would shift.
+      expect((unchanged!.current!['hired_at'] as Date).toISOString()).toBe('2026-03-14T15:09:26.535Z');
+      expect(unchanged!.current!['row_guid']).toBe('6f9619ff-8b86-d011-b42d-00c04fc964ff');
+
+      expect(modified!.state).toBe('Modified');
+      expect(modified!.original!['amount']).toBe('10');
+      expect(added!.state).toBe('Added');
+      expect(added!.original).toBeUndefined();
+    });
+
+    it('decodes the enveloped sample to the same table as the top-level one', () => {
+      const enveloped = decodeWireValue(valueFixtures.find((f) => f.case === 'value-datatable')!.body['value']);
+      const topLevel = decodeDataTable(body('datatable') as unknown as Contracts.DataTable);
+      expect(enveloped as DataTable).toEqual(topLevel);
+    });
+
+    it('keeps the relations of the dataset sample', () => {
+      const dataSet = decodeDataSet(body('dataset') as unknown as Contracts.DataSet);
+      expect(dataSet.tables.map((t) => t.tableName)).toEqual(['Master', 'Detail']);
+      expect(dataSet.relations[0]!.childColumns).toEqual(['sys_master_rowid']);
+    });
   });
 });

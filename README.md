@@ -20,6 +20,7 @@ and the whole stack end to end against a running host. The API surface may still
 | JSON body codec (wire value envelopes) | ✅ verified against the framework's wire fixtures |
 | JSON-RPC transport (envelope, pipeline, HTTP) | ✅ |
 | Typed connectors (`login`, `getList`, …) | ✅ |
+| DataTable / DataSet (decoding, editing, saving) | ✅ verified against the framework's wire fixtures |
 | API contract types, generated from the framework | ✅ synced, CI-checked |
 
 ## Why this exists
@@ -104,6 +105,103 @@ integer or a decimal, and there is no way to say otherwise.
 Every message type is exported under `Contracts` (`Contracts.GetListRequest`, …), generated from the
 framework. An optional member may be absent on the wire, and absent means the .NET default (`0`,
 `false`, the first enum member, an empty Guid).
+
+### Tables and data sets
+
+`getList` and `getLookup` return a `table`; `getData`, `getNewData` and `save` return a `dataSet`. Both
+arrive decoded. The shape is the server's (`columns`, `primaryKeys`, `rows`, and each row's `state`,
+`current` and `original`), and every cell already holds the value its column's type calls for:
+
+| Column type | Cell |
+|-------------|------|
+| `Decimal`, `Currency` | `string`, digit for digit. A JS number would lose the precision |
+| `Long` | `bigint` |
+| `Short`, `Integer`, `AutoIncrement` | `number` |
+| `Boolean` | `boolean` |
+| `DateTime` | `Date`, read as UTC |
+| `Date` | `'YYYY-MM-DD'`. A calendar day is not an instant, and as a `Date` it would move by a day in some zones |
+| `Guid`, `Time`, `String`, `Text` | `string` |
+| `Binary` | `Uint8Array` |
+
+A cell's `null` is the server's `DBNull`; the functions that set a cell also accept `DB_NULL` for it.
+Every row carries every column, so a cell is never `undefined`.
+
+The data is plain and read-only. Change it with `setCell`, `addRow` and `deleteRow`, which return a new
+table and keep each row's `state` and `original` the way `save` needs them:
+
+```ts
+import { addRow, deleteRow, hasChanges, setCell } from '@polhem/connector';
+
+const orders = client.form('Order');
+const { dataSet } = await orders.getData({ rowId });
+let [master, detail] = dataSet!.tables;
+
+master = setCell(master!, master!.rows[0]!, 'amount', '100.50'); // Unchanged → Modified
+detail = addRow(detail!, { item_no: 'A-01', qty: 2 });          // Added
+detail = deleteRow(detail, detail.rows[0]!);                    // Deleted
+
+const changed = { ...dataSet!, tables: [master, detail] };
+if (hasChanges(changed)) await orders.save({ dataSet: changed });
+```
+
+| Row state | `setCell` | `deleteRow` |
+|-----------|-----------|-------------|
+| `Unchanged` | becomes `Modified`; `original` keeps the values it was read with | becomes `Deleted`, keeping only `original` |
+| `Modified` | stays `Modified`; `original` does not change | becomes `Deleted`, keeping the values it was read with, not the edited ones |
+| `Added` | stays `Added` | is removed: the server has never seen it |
+| `Deleted` | throws | throws |
+
+A row is named by the row object, not by its index. Each change returns new row objects, so take the
+row from the table the last change returned: a row from before it is no longer in the table, and
+passing it throws instead of changing the wrong row. In React that matters when one event updates
+the same table twice, since the second `setT(prev => setCell(prev, row, …))` receives a `prev` that
+no longer holds `row`. The functions also throw on an unknown column, on a value that does not fit
+its column (a `Decimal` takes a string, a `Long` a bigint), and on a change to the `sys_rowid` of a
+row the server already has, which it would refuse.
+
+Show a `DateTime` in the signed-in user's time zone, which `login` keeps, not in the device's.
+`toLocaleString()` and `getHours()` use the device's zone, so an account set to Tokyo used from a
+laptop in Taipei would see Taipei time:
+
+```ts
+client.formatDateTime(hiredAt);                         // the user's zone and culture
+client.formatDateTime(hiredAt, { dateStyle: 'short' }); // Intl options, the zone fixed
+client.timeZone;                                        // 'Asia/Tokyo', for components that take a zone
+```
+
+Treat `DateTime` cells as read-only: the server sets them itself when it saves and does not take the
+values a client sends.
+
+#### The name `DataTable` in a UI project
+
+PrimeReact (`import { DataTable } from 'primereact/datatable'`) and PrimeVue
+(`import DataTable from 'primevue/datatable'`) both name their table component `DataTable`. In a file
+that uses one of them, import this package's type under another name:
+
+```ts
+import type { DataTable as PolhemDataTable } from '@polhem/connector';
+```
+
+The wire shapes stay under `Contracts` (`Contracts.DataTable`, `Contracts.DataSet`), and no connector
+method takes or returns them. Code that handles a wire shape itself can use `decodeDataTable`,
+`encodeDataTable`, `decodeDataSet` and `encodeDataSet`; `decodeWireValue` decodes a DataTable inside
+an `object`-typed member to the same decoded form.
+
+#### Coming from .NET's `System.Data`
+
+The names match the .NET client's, the API does not: here a table is data, and changes go through
+functions.
+
+| `System.Data` | `@polhem/connector` |
+|---------------|---------------------|
+| `table.Rows[0]["amount"] = 100.5m;` | `t = setCell(t, t.rows[0]!, 'amount', '100.5');` |
+| `table.Rows.Add(row)` | `t = addRow(t, { … })` |
+| `row.Delete()` | `t = deleteRow(t, row)` |
+| `row.RowState` | `row.state` |
+| `row["amount", DataRowVersion.Original]` | `row.original?.['amount']` |
+| `dataSet.HasChanges()` | `hasChanges(dataSet)` |
+| `DBNull.Value` | `null` |
+| `AcceptChanges()` | none; after a save, read the form again with `getData` |
 
 ### Sessions and errors
 
@@ -199,8 +297,8 @@ How changes reach `main`, and what to do when the framework's contract moves, is
 
 `npm test` never touches the network: wire compatibility is checked against fixed vectors produced
 by the .NET implementation. `npm run test:wire` is the broader check — it downloads the framework's
-published wire fixtures and round-trips every value sample except `value-datatable`, where it asserts
-that decoding a `DataTable` is refused because that is not supported yet. Those fixtures are **not
+published wire fixtures and round-trips every value sample, along with the top-level `datatable` and
+`dataset` samples, comparing the re-encoded JSON text with the original. Those fixtures are **not
 committed here**; a copy would be a second authority for the wire format, and it would drift.
 
 ### Testing against a real backend

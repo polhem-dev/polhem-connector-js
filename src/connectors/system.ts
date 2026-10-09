@@ -11,9 +11,26 @@ import type * as Contracts from '../contracts/messages.js';
  */
 export class SystemConnector {
   readonly #transport: JsonRpcTransport;
+  #timeZone = 'UTC';
+  #culture: string | undefined;
 
   constructor(transport: JsonRpcTransport) {
     this.#transport = transport;
+  }
+
+  /**
+   * The signed-in user's time zone, an IANA id such as `Asia/Taipei`, from the login response.
+   *
+   * `UTC` before `login`, after `logout`, and when the account has none. This, not the device's
+   * zone, is the one a `DateTime` is shown in.
+   */
+  get timeZone(): string {
+    return this.#timeZone;
+  }
+
+  /** The signed-in user's culture, such as `zh-TW`, from the login response; absent when it has none. */
+  get culture(): string | undefined {
+    return this.#culture;
   }
 
   /**
@@ -57,6 +74,8 @@ export class SystemConnector {
         await decryptSessionKey(response.apiEncryptionKey, privateKey),
       );
     }
+    this.#timeZone = response.timeZone || 'UTC';
+    this.#culture = response.culture || undefined;
 
     return response;
   }
@@ -73,6 +92,8 @@ export class SystemConnector {
       // Cleared even when the call fails: the session is gone from this client's point of view
       // either way, and keeping a token that may already be void only produces confusing errors.
       this.#transport.clearSession();
+      this.#timeZone = 'UTC';
+      this.#culture = undefined;
     }
   }
 

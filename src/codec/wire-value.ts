@@ -1,4 +1,7 @@
 import { fromBase64, toBase64, type Bytes } from '../crypto/bytes.js';
+import { DB_NULL } from './db-null.js';
+import type * as Contracts from '../contracts/messages.js';
+import { decodeDataTable, encodeDataTable, isDataTable, type DataTable } from '../data/data-table.js';
 
 /**
  * The discriminated envelope the framework wraps `object`-typed wire members in.
@@ -39,8 +42,7 @@ export const WireValueCode = {
 
 export type WireValueCodeValue = (typeof WireValueCode)[keyof typeof WireValueCode];
 
-/** Stands for the framework's `DBNull`, which is distinct from a missing value. */
-export const DB_NULL = Symbol.for('polhem.dbnull');
+export { DB_NULL };
 
 /**
  * A value carrying an explicit discriminator.
@@ -63,6 +65,7 @@ export type WireValue =
   | Bytes
   | typeof DB_NULL
   | TaggedWireValue
+  | DataTable
   | readonly WireValue[]
   | null
   | undefined;
@@ -120,6 +123,8 @@ export function encodeWireValue(value: WireValue): unknown {
     return [isInt32 ? WireValueCode.Int32 : WireValueCode.Double, value];
   }
 
+  if (isDataTable(value)) return [WireValueCode.DataTable, encodeDataTable(value)];
+
   if (typeof value === 'object' && 'code' in value) {
     const tagged = value as TaggedWireValue;
     return [tagged.code, encodeTagged(tagged)];
@@ -135,6 +140,7 @@ function encodeTagged(tagged: TaggedWireValue): unknown {
   if (code === WireValueCode.Int64 || code === WireValueCode.UInt64) return String(value);
   // DBNull carries no payload — the discriminator is what distinguishes it from a real null.
   if (code === WireValueCode.DBNull) return null;
+  if (code === WireValueCode.DataTable) return encodeDataTable(value as DataTable);
   // Each element carries its own discriminator, so the array recurses through the same envelope.
   if (code === WireValueCode.ObjectArray) {
     return (value as WireValue[]).map((item) => encodeWireValue(item));
@@ -151,6 +157,7 @@ function encodeTagged(tagged: TaggedWireValue): unknown {
  * - `DateTime` becomes a `Date`. The wire is UTC in both directions, so no zone is inferred.
  * - `DateTimeOffset`, `TimeSpan` and `DateOnly` stay strings, which is the only lossless form here.
  * - `DBNull` becomes {@link DB_NULL}, distinct from a missing property.
+ * - `DataTable` becomes a decoded {@link DataTable}, its cells converted by their column's type.
  *
  * IMPORTANT: decoding is lossy for the *narrower* codes, because JavaScript has no type to hold
  * them apart. A byte, an int16 and an int32 all decode to `number`; a decimal decodes to `string`
@@ -212,7 +219,7 @@ export function decodeWireValue(raw: unknown): WireValue {
       return (value as unknown[]).map(decodeWireValue);
 
     case WireValueCode.DataTable:
-      throw new Error('DataTable inside an object-typed member is not supported yet.');
+      return decodeDataTable(value as Contracts.DataTable);
 
     default:
       throw new Error(`Unknown wire value code ${code}.`);

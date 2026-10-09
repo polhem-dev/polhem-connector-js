@@ -1,5 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { PolhemClient } from '../src/connectors/client.js';
+import type * as Contracts from '../src/contracts/messages.js';
+import { setCell } from '../src/data/edit.js';
 import { WireTypeNames } from '../src/contracts/type-names.js';
 import type { JsonRpcRequest } from '../src/transport/envelope.js';
 import { PayloadDirection, PayloadFormat, buildPayload, restorePayload } from '../src/transport/envelope.js';
@@ -180,5 +182,89 @@ describe('connectors', () => {
   it('rejects a form connector without a progId', () => {
     const client = clientWith(mockFetch(() => ({})).fn);
     expect(() => client.form('')).toThrow(/progId/);
+  });
+
+  it('decodes the tables and data sets it reads, and encodes the one it saves', async () => {
+    const table: Contracts.DataTable = {
+      tableName: 'Employee',
+      columns: [
+        { name: 'sys_id', type: 'String', allowNull: false, readOnly: false, maxLength: -1, caption: 'sys_id', defaultValue: null },
+        { name: 'ref_no', type: 'Long', allowNull: true, readOnly: false, maxLength: -1, caption: 'ref_no', defaultValue: null },
+        { name: 'hired_at', type: 'DateTime', allowNull: true, readOnly: false, maxLength: -1, caption: 'hired_at', defaultValue: null },
+      ],
+      primaryKeys: ['sys_id'],
+      rows: [
+        {
+          state: 'Unchanged',
+          current: { sys_id: 'E001', ref_no: '9007199254740993', hired_at: '2026-03-14T15:09:26.535' },
+        },
+      ],
+    };
+    const dataSet: Contracts.DataSet = { dataSetName: 'Employee', tables: [table], relations: [] };
+
+    const { fn, calls } = mockFetch(async (req) => {
+      const value = req.method.endsWith('.GetList')
+        ? { table }
+        : req.method.endsWith('.GetData')
+          ? { dataSet }
+          : { affectedRows: { Employee: 1 }, dataSet };
+      return { jsonrpc: '2.0', id: req.id, result: { format: PayloadFormat.Plain, value } };
+    });
+    const form = clientWith(fn).form('Employee');
+
+    const list = await form.getList();
+    expect(list.table!.rows[0]!.current!['ref_no']).toBe(9007199254740993n);
+
+    const { dataSet: read } = await form.getData({ rowId: 'x' });
+    const employee = read!.tables[0]!;
+    expect(employee.rows[0]!.current!['hired_at']).toEqual(new Date('2026-03-14T15:09:26.535Z'));
+
+    const edited = setCell(employee, employee.rows[0]!, 'ref_no', 9007199254740995n);
+    const saved = await form.save({ dataSet: { ...read!, tables: [edited] } });
+
+    // What went out is the wire form: quoted long, UTC DateTime without a zone, both versions.
+    const sent = (await restorePayload(calls[2]!.params, PayloadFormat.Plain)) as Contracts.SaveRequest;
+    expect(sent.dataSet!.tables[0]!.rows[0]).toEqual({
+      state: 'Modified',
+      current: { sys_id: 'E001', ref_no: '9007199254740995', hired_at: '2026-03-14T15:09:26.535' },
+      original: { sys_id: 'E001', ref_no: '9007199254740993', hired_at: '2026-03-14T15:09:26.535' },
+    });
+    expect(saved.affectedRows).toEqual({ Employee: 1 });
+    expect(saved.dataSet!.tables[0]!.rows[0]!.current!['ref_no']).toBe(9007199254740993n);
+  });
+
+  it("keeps the user's time zone from login and formats a DateTime in it, not the device's", async () => {
+    const { fn } = mockFetch(async (req) =>
+      req.method === 'System.Login'
+        ? {
+            jsonrpc: '2.0',
+            id: req.id,
+            result: await buildPayload(
+              {
+                accessToken: '11111111-2222-3333-4444-555555555555',
+                timeZone: 'Asia/Tokyo',
+                culture: 'en-US',
+              },
+              PayloadFormat.Encoded,
+              WireTypeNames.LoginResponse,
+            ),
+          }
+        : { jsonrpc: '2.0', id: req.id, result: { format: PayloadFormat.Plain, value: {} } },
+    );
+    const client = clientWith(fn);
+    const instant = new Date('2026-03-14T15:09:26.535Z');
+
+    expect(client.timeZone).toBe('UTC');
+
+    await client.system.login('demo', 'secret');
+    expect(client.timeZone).toBe('Asia/Tokyo');
+    expect(client.formatDateTime(instant, { hour: '2-digit', minute: '2-digit', hourCycle: 'h23' })).toBe(
+      '00:09',
+    );
+    // `\s`: newer ICU data puts a narrow no-break space before the day period.
+    expect(client.formatDateTime(instant)).toMatch(/^Mar 15, 2026, 12:09:26\sAM$/);
+
+    await client.system.logout();
+    expect(client.timeZone).toBe('UTC');
   });
 });
