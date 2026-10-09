@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import {
   DB_NULL,
   WireValueCode,
@@ -277,20 +277,15 @@ describe('DataTable editing', () => {
   });
 
   it('adds a row carrying every column, defaults filled in', () => {
-    const table = addRow(fresh(), { sys_id: 'E003', ref_no: 5n });
+    const table = addRow(fresh(), { sys_id: 'E003', ref_no: 5n }, { timeZone: 'UTC' });
     const added = table.rows[2]!;
+    const { sys_rowid, hired_at, birthday, ...rest } = added.current!;
 
     expect(added.state).toBe('Added');
-    expect(added.current).toEqual({
-      sys_rowid: null,
-      sys_id: 'E003',
-      amount: null,
-      ref_no: 5n,
-      hired_at: null,
-      birthday: null,
-      active: false,
-      level: 0,
-    });
+    expect(rest).toEqual({ sys_id: 'E003', amount: '0', ref_no: 5n, active: false, level: 0 });
+    expect(sys_rowid).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/);
+    expect(hired_at).toBeInstanceOf(Date);
+    expect(birthday).toMatch(/^\d{4}-\d{2}-\d{2}$/);
     expect(() => addRow(fresh(), { nope: 1 })).toThrow(/no column 'nope'/);
   });
 
@@ -326,5 +321,113 @@ describe('DataTable editing', () => {
     expect(hasChanges(setCell(unchanged, unchanged.rows[0]!, 'amount', '1'))).toBe(true);
     expect(hasChanges({ dataSetName: 'Order', tables: [unchanged], relations: [] })).toBe(false);
     expect(hasChanges({ dataSetName: 'Order', tables: [unchanged, table], relations: [] })).toBe(true);
+  });
+});
+
+describe('addRow seeding', () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  function detail(columns: Contracts.DataColumnShape[]): DataTable {
+    return decodeDataTable({ tableName: 'OrderLine', columns, primaryKeys: [], rows: [] });
+  }
+
+  const master = decodeDataTable({
+    tableName: 'Order',
+    columns: [column('sys_rowid', 'Guid')],
+    primaryKeys: [],
+    rows: [{ state: 'Unchanged', current: { sys_rowid: 'ABCDEF01-0000-0000-0000-000000000001' } }],
+  });
+
+  it('gives each added row its own non-empty sys_rowid, which the unique index needs', () => {
+    let table = detail([column('sys_rowid', 'Guid', '00000000-0000-0000-0000-000000000000')]);
+    table = addRow(table);
+    table = addRow(table);
+
+    const [first, second] = table.rows.map((r) => r.current!['sys_rowid']);
+    expect(first).not.toBe('00000000-0000-0000-0000-000000000000');
+    expect(second).not.toBe(first);
+  });
+
+  it('keeps a sys_rowid the caller gives', () => {
+    const table = addRow(detail([column('sys_rowid', 'Guid')]), {
+      sys_rowid: '00000000-0000-0000-0000-000000000009',
+    });
+    expect(table.rows[0]!.current!['sys_rowid']).toBe('00000000-0000-0000-0000-000000000009');
+  });
+
+  it("links a detail row to the master's sys_rowid, copied as it is", () => {
+    const table = addRow(detail([column('sys_rowid', 'Guid'), column('sys_master_rowid', 'Guid')]), {}, {
+      master: master.rows[0]!,
+    });
+    expect(table.rows[0]!.current!['sys_master_rowid']).toBe('ABCDEF01-0000-0000-0000-000000000001');
+  });
+
+  it('lets values override the master link', () => {
+    const table = addRow(
+      detail([column('sys_master_rowid', 'Guid')]),
+      { sys_master_rowid: '00000000-0000-0000-0000-000000000002' },
+      { master: master.rows[0]! },
+    );
+    expect(table.rows[0]!.current!['sys_master_rowid']).toBe('00000000-0000-0000-0000-000000000002');
+  });
+
+  it('refuses a Deleted master, which has no current sys_rowid', () => {
+    const deleted = deleteRow(master, master.rows[0]!);
+    expect(() =>
+      addRow(detail([column('sys_master_rowid', 'Guid')]), {}, { master: deleted.rows[0]! }),
+    ).toThrow(/master row has no sys_rowid/);
+  });
+
+  it('fills a column without a table default with the empty value of its type', () => {
+    const table = addRow(
+      detail([
+        column('name', 'String'),
+        column('memo', 'Text'),
+        column('at', 'Time'),
+        column('flag', 'Boolean'),
+        column('qty', 'Short'),
+        column('seq', 'Integer'),
+        column('total', 'Long'),
+        column('price', 'Currency'),
+        column('rate', 'Decimal'),
+        column('ref_rowid', 'Guid'),
+        column('blob', 'Binary'),
+        column('sys_no', 'AutoIncrement'),
+      ]),
+    );
+    expect(table.rows[0]!.current).toEqual({
+      name: '',
+      memo: '',
+      at: '',
+      flag: false,
+      qty: 0,
+      seq: 0,
+      total: 0n,
+      price: '0',
+      rate: '0',
+      ref_rowid: '00000000-0000-0000-0000-000000000000',
+      blob: new Uint8Array(0),
+      sys_no: null,
+    });
+  });
+
+  it('prefers the default value the table carries', () => {
+    const table = addRow(detail([column('qty', 'Integer', 5), column('name', 'String', 'n/a')]));
+    expect(table.rows[0]!.current).toEqual({ qty: 5, name: 'n/a' });
+  });
+
+  it("defaults a Date to today in the given time zone, and a DateTime to now", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-01-01T20:00:00Z'));
+    const columns = [column('due_on', 'Date'), column('created_at', 'DateTime')];
+
+    const taipei = addRow(detail(columns), {}, { timeZone: 'Asia/Taipei' }).rows[0]!.current!;
+    const utc = addRow(detail(columns)).rows[0]!.current!;
+
+    expect(taipei['due_on']).toBe('2026-01-02');
+    expect(utc['due_on']).toBe('2026-01-01');
+    expect(utc['created_at']).toEqual(new Date('2026-01-01T20:00:00Z'));
   });
 });
