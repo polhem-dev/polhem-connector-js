@@ -45,6 +45,9 @@
     "fetch-fixtures": "node scripts/fetch-fixtures.mjs",
     "test:wire": "npm run fetch-fixtures && vitest run --config vitest.wire.config.ts",
     "smoke": "npm run build && node scripts/smoke.mjs",
+    "examples:check": "tsc -p examples/tsconfig.json",
+    "example:node": "npm run build && node examples/node/quickstart.mjs",
+    "example:browser": "npm run build && node examples/browser/serve.mjs",
     "contracts:update": "node scripts/contracts.mjs",
     "contracts:check": "node scripts/contracts.mjs --check"
   },

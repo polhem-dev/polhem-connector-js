@@ -40,6 +40,9 @@ jobs:
       - run: npm test
       - run: npm run build
 
+      # Type-checks the examples against the build, so an API change that breaks one fails here.
+      - run: npm run examples:check
+
       # Verifies the codec against golden samples published by the framework repository. Kept
       # separate from `npm test` because it needs the network — a failure here means the wire
       # moved, not that this package is broken.

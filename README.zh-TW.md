@@ -268,6 +268,11 @@ Encrypted 呼叫（包括 `login`）會以 `-32005`（`JsonRpcErrorCode.ReplayRe
 已登入的工作階段以 Plain 呼叫宣告為 `ApiReplayProtection.UniqueSequence` 的方法時，也會被拒絕（`-32602`）。
 與本客戶端連線的部署請保持這個開關關閉。
 
+## 範例
+
+[`examples/`](examples/README.zh-TW.md) 有一支 Node 程式與一個瀏覽器頁面，登入框架的 QuickStart.Server、列出表單，
+並新增、修改、刪除一筆含主檔與明細的資料。
+
 ## 開發
 
 ```sh

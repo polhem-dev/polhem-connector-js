@@ -293,6 +293,11 @@ calls, `login` included, are rejected with `-32005` (`JsonRpcErrorCode.ReplayRej
 Plain calls are refused too when they reach a method declared with `ApiReplayProtection.UniqueSequence` from a
 signed-in session (`-32602`). Leave the switch off for deployments this client talks to.
 
+## Examples
+
+[`examples/`](examples/README.md) has a Node program and a browser page that sign in to the framework's
+QuickStart.Server, list a form, and create, change and delete a record with master and detail rows.
+
 ## Development
 
 ```sh

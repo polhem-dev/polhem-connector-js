@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Polhem connector example</title>
+    <!-- The package build, under the name an application imports it by. -->
+    <script type="importmap">
+      { "imports": { "@polhem/connector": "/dist/index.js" } }
+    </script>
+    <style>
+      body { font: 15px/1.5 system-ui, sans-serif; max-width: 46rem; margin: 2rem auto; padding: 0 1rem; }
+      form { display: grid; grid-template-columns: max-content 1fr; gap: 0.5rem 1rem; align-items: center; }
+      input { font: inherit; padding: 0.25rem 0.5rem; }
+      button { grid-column: 2; justify-self: start; font: inherit; padding: 0.35rem 1rem; }
+      pre { background: #f4f4f5; padding: 1rem; white-space: pre-wrap; min-height: 6rem; }
+      .error { color: #b91c1c; }
+    </style>
+  </head>
+  <body>
+    <h1>Polhem connector example</h1>
+    <p>
+      Signs in to a Polhem server, lists the <code>Staff</code> form, then creates, changes and deletes a record.
+      The defaults match the framework's QuickStart.Server.
+    </p>
+    <form id="settings">
+      <label for="endpoint">Endpoint</label>
+      <input id="endpoint" name="endpoint" value="http://localhost:5050/api" />
+      <label for="apiKey">API key</label>
+      <input id="apiKey" name="apiKey" value="quickstart-demo" />
+      <label for="user">User</label>
+      <input id="user" name="user" value="demo" autocomplete="username" />
+      <label for="password">Password</label>
+      <input id="password" name="password" type="password" value="demo" autocomplete="current-password" />
+      <label for="companyId">Company</label>
+      <input id="companyId" name="companyId" value="DEMO" />
+      <button type="submit">Run</button>
+    </form>
+    <pre id="log" aria-live="polite"></pre>
+    <script type="module" src="./app.mjs"></script>
+  </body>
+</html>
