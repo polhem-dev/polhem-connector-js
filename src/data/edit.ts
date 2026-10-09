@@ -16,6 +16,11 @@ import type { DataRow, DataSet, DataTable } from './data-table.js';
 /** The column the server keys a row by; it refuses an update that changes it. */
 const ROW_ID = 'sys_rowid';
 
+/** The column that links a detail row to its master row's `sys_rowid`. */
+const MASTER_ROW_ID = 'sys_master_rowid';
+
+const EMPTY_GUID = '00000000-0000-0000-0000-000000000000';
+
 /**
  * Sets one cell.
  *
@@ -57,15 +62,42 @@ export function setCell(
   return withRows(table, table.rows.map((r, i) => (i === index ? changed : r)));
 }
 
+/** Options for {@link addRow}. */
+export interface AddRowOptions {
+  /**
+   * The master row a detail row belongs to. Its `sys_rowid` becomes the new row's
+   * `sys_master_rowid`, unless `values` names that column.
+   */
+  readonly master?: DataRow;
+  /**
+   * The IANA time zone whose day a `Date` column defaults to, normally the signed-in user's
+   * (`client.timeZone`). Defaults to `UTC`.
+   */
+  readonly timeZone?: string;
+}
+
 /**
- * Adds an `Added` row.
+ * Adds an `Added` row, seeded the way the framework seeds a new row.
  *
- * Columns left out of `values` take the column's default value, so the row carries every column.
+ * Every column takes a value, so the row carries every column. A column named in `values` takes that
+ * value. Otherwise `sys_rowid` gets a new Guid, `sys_master_rowid` gets the `sys_rowid` of
+ * `options.master` when one is given, and any other column takes its default value from the table,
+ * or, when the table has none, the empty value of its type: `''`, `0`, `'0'`, `0n`, `false`, the empty
+ * Guid, today in `options.timeZone` for a `Date` and now for a `DateTime`. An `AutoIncrement` column
+ * stays `null`; the database numbers it.
+ *
+ * NOTE: a table read by `getData` carries no column defaults, so its new rows take the empty values.
+ * The server keys every row by `sys_rowid` through a unique index, and refuses a detail row whose
+ * `sys_master_rowid` is not a master row of the same save.
  *
  * @throws When `values` names a column the table does not have, or holds a value that does not fit
- * its column.
+ * its column; when `options.master` is `Deleted` or has no `sys_rowid`.
  */
-export function addRow(table: DataTable, values: Readonly<Record<string, CellInput>> = {}): DataTable {
+export function addRow(
+  table: DataTable,
+  values: Readonly<Record<string, CellInput>> = {},
+  options: AddRowOptions = {},
+): DataTable {
   for (const name of Object.keys(values)) columnOf(table, name);
 
   const current: Record<string, CellValue> = {};
@@ -73,7 +105,7 @@ export function addRow(table: DataTable, values: Readonly<Record<string, CellInp
     current[column.name] =
       column.name in values
         ? checkCell(column, values[column.name]!)
-        : decodeCell(column, column.defaultValue);
+        : seedCell(column, options);
   }
 
   return withRows(table, [...table.rows, { state: 'Added', current }]);
@@ -131,4 +163,64 @@ function columnOf(table: DataTable, name: string): Contracts.DataColumnShape {
 
 function withRows(table: DataTable, rows: readonly DataRow[]): DataTable {
   return { ...table, rows };
+}
+
+function seedCell(column: Contracts.DataColumnShape, options: AddRowOptions): CellValue {
+  if (column.name === ROW_ID) return crypto.randomUUID();
+  if (column.name === MASTER_ROW_ID && options.master) return masterRowIdOf(options.master);
+
+  const fromTable = decodeCell(column, column.defaultValue);
+  return fromTable ?? emptyValueOf(column, options.timeZone ?? 'UTC');
+}
+
+// The master's value is copied as it is, not re-parsed: on SQLite a stored Guid keeps the casing it
+// was written with, and the framework links a detail row by the master's exact text.
+function masterRowIdOf(master: DataRow): CellValue {
+  const rowId = master.current?.[ROW_ID];
+  if (rowId === undefined || rowId === null) {
+    throw new Error(`The master row has no ${ROW_ID} to link to; a Deleted row cannot be a master.`);
+  }
+  return rowId;
+}
+
+/** The value `FormRowDefaults` gives a column of this type in the framework. */
+function emptyValueOf(column: Contracts.DataColumnShape, timeZone: string): CellValue {
+  switch (column.type) {
+    case 'String':
+    case 'Text':
+    case 'Time':
+      return '';
+    case 'Boolean':
+      return false;
+    case 'Short':
+    case 'Integer':
+      return 0;
+    case 'Long':
+      return 0n;
+    case 'Decimal':
+    case 'Currency':
+      return '0';
+    case 'Guid':
+      return EMPTY_GUID;
+    case 'Date':
+      return todayIn(timeZone);
+    case 'DateTime':
+      return new Date();
+    case 'Binary':
+      return new Uint8Array(0);
+    default:
+      // `AutoIncrement`, which the database numbers, and any type this package does not know.
+      return null;
+  }
+}
+
+function todayIn(timeZone: string): string {
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).formatToParts(new Date());
+  const part = (type: Intl.DateTimeFormatPartTypes) => parts.find((p) => p.type === type)!.value;
+  return `${part('year')}-${part('month')}-${part('day')}`;
 }

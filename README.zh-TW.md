@@ -133,7 +133,8 @@ const { dataSet } = await orders.getData({ rowId });
 let [master, detail] = dataSet!.tables;
 
 master = setCell(master!, master!.rows[0]!, 'amount', '100.50'); // Unchanged → Modified
-detail = addRow(detail!, { item_no: 'A-01', qty: 2 });          // Added
+detail = addRow(detail!, { item_no: 'A-01', qty: 2 },           // Added, linked to the master
+  { master: master.rows[0]!, timeZone: client.timeZone });
 detail = deleteRow(detail, detail.rows[0]!);                    // Deleted
 
 const changed = { ...dataSet!, tables: [master, detail] };
@@ -146,6 +147,12 @@ if (hasChanges(changed)) await orders.save({ dataSet: changed });
 | `Modified` | 維持 `Modified`；`original` 不變 | 變成 `Deleted`，保留讀進來時的值，而不是改過的值 |
 | `Added` | 維持 `Added` | 直接移除：伺服端從沒見過這一列 |
 | `Deleted` | 擲錯 | 擲錯 |
+
+`addRow` 依框架的方式為新列填值。`sys_rowid` 給一個新的 Guid：伺服端以 unique 索引依 `sys_rowid` 識別每一列，這是必要的。
+有指定 `master` 時，`sys_master_rowid` 設成該列的 `sys_rowid`；明細列的主檔不在同一次存檔裡，伺服端會拒收。
+`values` 沒有指定的欄位取資料表的預設值；資料表沒有預設值時（`getData` 讀回的資料表就沒有），取該型別的空值：
+`''`、`0`、`'0'`、`0n`、`false` 或空 Guid，`Date` 取 `timeZone` 的今天（未指定時為 UTC），`DateTime` 取現在。
+`AutoIncrement` 欄維持 `null`，由資料庫編號。
 
 以列物件本身指定哪一列，不用 index。每次修改都會產生新的列物件，所以要從上一次修改回傳的資料表取列：
 修改之前的列已不在表裡，傳進去會擲錯，而不是改到別列。在 React 裡，同一個事件對同一張表更新兩次時要注意：

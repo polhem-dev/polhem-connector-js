@@ -140,7 +140,8 @@ const { dataSet } = await orders.getData({ rowId });
 let [master, detail] = dataSet!.tables;
 
 master = setCell(master!, master!.rows[0]!, 'amount', '100.50'); // Unchanged → Modified
-detail = addRow(detail!, { item_no: 'A-01', qty: 2 });          // Added
+detail = addRow(detail!, { item_no: 'A-01', qty: 2 },           // Added, linked to the master
+  { master: master.rows[0]!, timeZone: client.timeZone });
 detail = deleteRow(detail, detail.rows[0]!);                    // Deleted
 
 const changed = { ...dataSet!, tables: [master, detail] };
@@ -153,6 +154,14 @@ if (hasChanges(changed)) await orders.save({ dataSet: changed });
 | `Modified` | stays `Modified`; `original` does not change | becomes `Deleted`, keeping the values it was read with, not the edited ones |
 | `Added` | stays `Added` | is removed: the server has never seen it |
 | `Deleted` | throws | throws |
+
+`addRow` seeds a new row the way the framework does. It gives `sys_rowid` a new Guid, which the server
+needs, since it keys every row by `sys_rowid` through a unique index. With `master`, it sets
+`sys_master_rowid` to that row's `sys_rowid`; the server refuses a detail row whose master is not in
+the same save. A column left out of `values` takes the table's default value, or, when the table has
+none (a table read by `getData` has none), the empty value of its type: `''`, `0`, `'0'`, `0n`, `false`
+or the empty Guid, today in `timeZone` for a `Date` (UTC when it is left out) and now for a `DateTime`.
+An `AutoIncrement` column stays `null` for the database to number.
 
 A row is named by the row object, not by its index. Each change returns new row objects, so take the
 row from the table the last change returned: a row from before it is no longer in the table, and

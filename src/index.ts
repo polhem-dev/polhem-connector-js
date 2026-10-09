@@ -45,6 +45,7 @@ export type {
   Decoded,
 } from './data/data-table.js';
 export { addRow, deleteRow, hasChanges, setCell } from './data/edit.js';
+export type { AddRowOptions } from './data/edit.js';
 export type { CellInput, CellValue } from './data/cells.js';
 export {
   AuthenticationRequiredError,
