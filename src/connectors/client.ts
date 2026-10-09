@@ -14,6 +14,7 @@ export type DateTimeFormatOptions = Omit<Intl.DateTimeFormatOptions, 'timeZone'>
  * ```ts
  * const client = new PolhemClient({ endpoint: 'https://host/api', apiKey: '…' });
  * await client.system.login('demo', 'secret');
+ * await client.system.enterCompany('DEMO');
  * const employees = await client.form('Employee').getList();
  * ```
  *

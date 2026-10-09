@@ -76,6 +76,9 @@ const client = new PolhemClient({ endpoint: 'https://host/api', apiKey: '…' })
 // Every call after this encrypts without being asked.
 await client.system.login('demo', 'secret');
 
+// Form data belongs to a company, so enter one before calling a form.
+await client.system.enterCompany('DEMO');
+
 const employees = await client.form('Employee').getList({ selectFields: 'sys_id,sys_name' });
 
 await client.system.logout();
