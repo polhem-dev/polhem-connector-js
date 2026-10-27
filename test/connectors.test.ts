@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { PolhemClient } from '../src/connectors/client.js';
 import type * as Contracts from '../src/contracts/messages.js';
+import { decodeDataTable } from '../src/data/data-table.js';
 import { setCell } from '../src/data/edit.js';
 import { WireTypeNames } from '../src/contracts/type-names.js';
 import type { JsonRpcRequest } from '../src/transport/envelope.js';
@@ -231,6 +232,63 @@ describe('connectors', () => {
     });
     expect(saved.affectedRows).toEqual({ Employee: 1 });
     expect(saved.dataSet!.tables[0]!.rows[0]!.current!['ref_no']).toBe(9007199254740993n);
+  });
+
+  it('encodes the row a field change carries and decodes the values it answers with', async () => {
+    const columns: Contracts.DataTable['columns'] = [
+      { name: 'sys_id', type: 'String', allowNull: false, readOnly: false, maxLength: -1, caption: 'sys_id', defaultValue: null },
+      { name: 'ref_no', type: 'Long', allowNull: true, readOnly: false, maxLength: -1, caption: 'ref_no', defaultValue: null },
+      { name: 'ordered_at', type: 'DateTime', allowNull: true, readOnly: false, maxLength: -1, caption: 'ordered_at', defaultValue: null },
+    ];
+    const row: Contracts.DataTable = {
+      tableName: 'OrderItem',
+      columns,
+      primaryKeys: ['sys_id'],
+      rows: [
+        {
+          state: 'Unchanged',
+          current: { sys_id: 'L001', ref_no: '9007199254740993', ordered_at: '2026-03-14T15:09:26.535' },
+        },
+      ],
+    };
+    const values: Contracts.DataTable = {
+      tableName: 'OrderItem',
+      columns,
+      primaryKeys: ['sys_id'],
+      rows: [
+        {
+          state: 'Unchanged',
+          current: { sys_id: 'L001', ref_no: '9007199254740995', ordered_at: '2026-03-14T15:09:26.535' },
+        },
+      ],
+    };
+
+    const { fn, calls } = mockFetch(async (req) => ({
+      jsonrpc: '2.0',
+      id: req.id,
+      result: { format: PayloadFormat.Plain, value: { values, warnings: { ref_no: 'Rounded.' } } },
+    }));
+    const form = clientWith(fn).form('Order');
+
+    const answer = await form.fieldValueChange({
+      tableName: 'OrderItem',
+      fieldName: 'ref_product_id',
+      value: 'P001',
+      row: decodeDataTable(row),
+    });
+
+    // The call is routed as <progId>.FieldValueChange, and the row goes out in its wire form.
+    expect(calls[0]!.method).toBe('Order.FieldValueChange');
+    const sent = (await restorePayload(calls[0]!.params, PayloadFormat.Plain)) as Contracts.FieldValueChangeRequest;
+    expect(sent.row!.rows[0]).toEqual({
+      state: 'Unchanged',
+      current: { sys_id: 'L001', ref_no: '9007199254740993', ordered_at: '2026-03-14T15:09:26.535' },
+    });
+
+    // What comes back is decoded, and the keyed messages pass through untouched.
+    expect(answer.values!.rows[0]!.current!['ref_no']).toBe(9007199254740995n);
+    expect(answer.values!.rows[0]!.current!['ordered_at']).toEqual(new Date('2026-03-14T15:09:26.535Z'));
+    expect(answer.warnings).toEqual({ ref_no: 'Rounded.' });
   });
 
   it("keeps the user's time zone from login and formats a DateTime in it, not the device's", async () => {
