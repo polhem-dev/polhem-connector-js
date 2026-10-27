@@ -5,6 +5,7 @@ import {
   decodeDataSet,
   decodeDataTable,
   encodeDataSet,
+  encodeDataTable,
   type Decoded,
 } from '../data/data-table.js';
 
@@ -92,6 +93,31 @@ export class FormConnector {
   }
 
   /**
+   * Asks the server what a field change implies.
+   *
+   * Behind a field marked `ValueChangeCallback` in the FormSchema sits the form's own
+   * `FieldValueChange`: the server resolves the new value against the definitions — a relation field
+   * reads the related row and returns its mapped values — and answers with the values to write into
+   * the row. Send the row being edited as `row` so the server can read its other fields; one row is
+   * enough, and it is encoded on the way out like the one `save` sends. `values` comes back decoded
+   * and holds only the fields the server set, while `errors` and `warnings` are keyed by field name.
+   */
+  async fieldValueChange(
+    request: Decoded<Contracts.FieldValueChangeRequest>,
+  ): Promise<Decoded<Contracts.FieldValueChangeResponse>> {
+    const { row, ...rest } = request;
+    const wireRequest: Contracts.FieldValueChangeRequest = row
+      ? { ...rest, row: encodeDataTable(row) }
+      : rest;
+    const response = await this.#call<Contracts.FieldValueChangeResponse>(
+      'FieldValueChange',
+      wireRequest,
+      WireTypeNames.FieldValueChangeRequest,
+    );
+    return withValues(response);
+  }
+
+  /**
    * Persists a change set.
    *
    * The server applies each row by its `state`, and finds a `Modified` or `Deleted` row by its
@@ -127,6 +153,13 @@ function withTable<T extends { table?: Contracts.DataTable }>(response: T): Deco
   if (response == null) return response as Decoded<T>;
   const { table, ...rest } = response;
   return (table ? { ...rest, table: decodeDataTable(table) } : rest) as Decoded<T>;
+}
+
+function withValues<T extends { values?: Contracts.DataTable }>(response: T): Decoded<T> {
+  // A null result stays null, as it does for the table and data set responses.
+  if (response == null) return response as Decoded<T>;
+  const { values, ...rest } = response;
+  return (values ? { ...rest, values: decodeDataTable(values) } : rest) as Decoded<T>;
 }
 
 function withDataSet<T extends { dataSet?: Contracts.DataSet }>(response: T): Decoded<T> {

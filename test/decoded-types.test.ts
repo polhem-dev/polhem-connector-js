@@ -28,7 +28,10 @@ type MentionsWire<T, Depth extends unknown[] = []> = T extends WireShape
           : false
         : false;
 
-type Methods = Pick<FormConnector, 'getList' | 'getData' | 'getNewData' | 'getLookup' | 'save' | 'delete'>;
+type Methods = Pick<
+  FormConnector,
+  'getList' | 'getData' | 'getNewData' | 'getLookup' | 'fieldValueChange' | 'save' | 'delete'
+>;
 type Signatures = {
   [K in keyof Methods]: [Parameters<Methods[K]>, Awaited<ReturnType<Methods[K]>>];
 }[keyof Methods];
@@ -48,6 +51,8 @@ describe('decoded message types', () => {
   it('replaces the shapes and keeps optional members optional', () => {
     assert<Equal<Decoded<Contracts.GetListResponse>['table'], DataTable | undefined>>();
     assert<Equal<Decoded<Contracts.SaveRequest>['dataSet'], DataSet | undefined>>();
+    assert<Equal<Decoded<Contracts.FieldValueChangeRequest>['row'], DataTable | undefined>>();
+    assert<Equal<Decoded<Contracts.FieldValueChangeResponse>['values'], DataTable | undefined>>();
 
     // Every member stays optional, as on the wire.
     const empty: Decoded<Contracts.GetListResponse> = {};

@@ -19,6 +19,8 @@ export const WireTypeNames = {
   EnterCompanyResponse: 'Polhem.Api.Core.Messages.System.EnterCompanyResponse, Polhem.Api.Core',
   ExecFuncRequest: 'Polhem.Api.Core.Messages.ExecFuncRequest, Polhem.Api.Core',
   ExecFuncResponse: 'Polhem.Api.Core.Messages.ExecFuncResponse, Polhem.Api.Core',
+  FieldValueChangeRequest: 'Polhem.Api.Core.Messages.Form.FieldValueChangeRequest, Polhem.Api.Core',
+  FieldValueChangeResponse: 'Polhem.Api.Core.Messages.Form.FieldValueChangeResponse, Polhem.Api.Core',
   GetAccessLogRequest: 'Polhem.Api.Core.Messages.AuditLog.GetAccessLogRequest, Polhem.Api.Core',
   GetApiAnomalyLogRequest: 'Polhem.Api.Core.Messages.AuditLog.GetApiAnomalyLogRequest, Polhem.Api.Core',
   GetApiAnomalySummaryRequest: 'Polhem.Api.Core.Messages.AuditLog.GetApiAnomalySummaryRequest, Polhem.Api.Core',

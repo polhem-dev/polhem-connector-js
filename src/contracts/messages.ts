@@ -205,6 +205,21 @@ export interface ExecFuncResponse {
   parameters?: Parameter[];
 }
 
+export interface FieldValueChangeRequest {
+  fieldName?: string;
+  parameters?: Parameter[];
+  row?: DataTable;
+  tableName?: string;
+  value?: string;
+}
+
+export interface FieldValueChangeResponse {
+  errors?: Record<string, string>;
+  parameters?: Parameter[];
+  values?: DataTable;
+  warnings?: Record<string, string>;
+}
+
 export interface FilterCondition {
   fieldName?: string;
   ignoreIfNull?: boolean;
