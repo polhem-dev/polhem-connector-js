@@ -45,9 +45,11 @@ export class FormConnector {
    * and an unmarked Guid as plain text. Since framework 1.13.0 the server reads a string value as the
    * type of the field it is compared with, so a date (`yyyy-MM-dd`), a time of day (`HH:mm`), a Guid
    * or a quoted number filters a typed column unmarked, and text the field's type cannot read is
-   * refused with `-32602`. For a `Date` field send the date as written, not `toISOString()`, which
-   * moves it to UTC. The `wire` helpers still mark a value's type; marked values need an encoded or
-   * encrypted call, which is the default once signed in, and a Plain call refuses them.
+   * refused with `-32602`, as is an empty string for a number, date, Guid or Boolean field. For a `Date` field send text or
+   * `wire.dateOnly(...)`, not a JavaScript `Date`, which is sent as `toISOString()` and moves to UTC;
+   * a `DateTime` field reads text without an offset as UTC. The `wire` helpers mark a value's type;
+   * marked values need an encoded or encrypted call, which is the default once signed in, and a Plain
+   * call refuses them.
    */
   async getList(
     request: Decoded<Contracts.GetListRequest> = {},

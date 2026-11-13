@@ -85,8 +85,8 @@ await client.system.logout();
 ```
 
 A filter is a tree of `FilterGroup` and `FilterCondition` nodes, told apart by `kind`. Values inside a
-condition are `object`-typed on the server, so mark the ones JavaScript cannot tell apart — an
-unmarked decimal would arrive as a string:
+condition are `object`-typed on the server, so an unmarked decimal arrives there as a string; the `wire`
+helpers mark the types JavaScript cannot tell apart:
 
 ```ts
 import { wire } from '@polhem/connector';
@@ -105,10 +105,13 @@ Encrypted call, which is what every call is after `login`. A Plain call refuses 
 a Plain value by its JSON kind alone, so a Guid or a date stays a string there, a number becomes an
 integer or a decimal, and there is no way to say otherwise.
 
-Since framework 1.13.0 a form's list and count filters read a string value as the type of the field it is compared
-with, whatever the call's format, so a date (`yyyy-MM-dd`), a time of day (`HH:mm`), a Guid or a quoted number
-filters a typed column without a marker. Text the field's type cannot read is refused with `-32602`, naming the
-field. For a `Date` field send the date as written rather than `toISOString()`, which moves it to UTC.
+Since framework 1.13.0 a form's list filter reads a string value as the type of the field it is compared with,
+whatever the call's format, so a date (`yyyy-MM-dd`), a time of day (`HH:mm`), a Guid or a quoted number filters a
+typed column without a marker. Text the field's type cannot read is refused with `-32602`, and so is an empty string
+for a number, date, Guid or Boolean field, naming the field: leave the condition out, or send `null` with
+`ignoreIfNull`, rather than an empty string. For a `Date` field send the date as text or `wire.dateOnly(...)`, not a
+JavaScript `Date`: that is sent as `toISOString()`, which moves it to UTC and can land on the day before. A
+`DateTime` field reads text without an offset as UTC, so `2026-11-13` there means midnight UTC.
 
 Every message type is exported under `Contracts` (`Contracts.GetListRequest`, …), generated from the
 framework. An optional member may be absent on the wire, and absent means the .NET default (`0`,
@@ -128,7 +131,8 @@ arrive decoded. The shape is the server's (`columns`, `primaryKeys`, `rows`, and
 | `Boolean` | `boolean` |
 | `DateTime` | `Date`, read as UTC |
 | `Date` | `'YYYY-MM-DD'`. A calendar day is not an instant, and as a `Date` it would move by a day in some zones |
-| `Guid`, `Time`, `String`, `Text` | `string` |
+| `Time` | `string`, `HH:mm`. Since framework 1.13.0 a save stores it in that form and refuses a value that is not a time of day with `-32602` |
+| `Guid`, `String`, `Text` | `string` |
 | `Binary` | `Uint8Array` |
 
 A cell's `null` is the server's `DBNull`; the functions that set a cell also accept `DB_NULL` for it.

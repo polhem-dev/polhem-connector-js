@@ -81,7 +81,7 @@ await client.system.logout();
 ```
 
 filter 是由 `FilterGroup` 與 `FilterCondition` 節點組成的樹，以 `kind` 區分。condition 裡的值在伺服端是
-`object` 型別，所以 JavaScript 分辨不出來的值要加上標記——沒標記的 decimal 會以字串抵達：
+`object` 型別，所以沒標記的 decimal 在伺服端是字串；`wire` 輔助函式用來標記 JavaScript 分辨不出來的型別：
 
 ```ts
 import { wire } from '@polhem/connector';
@@ -99,9 +99,11 @@ await client.form('Employee').getList({
 都是。Plain 呼叫會拒絕它們：伺服端只依 JSON 種類綁定 Plain 的值，所以 Guid 或日期在那裡仍是字串，數字會成為整數或
 decimal，沒有辦法另外指定。
 
-從框架 1.13.0 起，不論呼叫採用哪種格式，表單的清單與筆數過濾條件都會依所比對欄位的型別讀取字串值，因此日期
-（`yyyy-MM-dd`）、時刻（`HH:mm`）、Guid 或加了引號的數字不加標記也能過濾有型別的欄位。欄位型別讀不懂的文字會以 `-32602`
-拒絕，訊息會指出欄位。`Date` 欄位請送出原本的日期，不要用 `toISOString()`，它會把日期換算成 UTC。
+從框架 1.13.0 起，不論呼叫採用哪種格式，表單清單的過濾條件都會依所比對欄位的型別讀取字串值，因此日期（`yyyy-MM-dd`）、
+時刻（`HH:mm`）、Guid 或加了引號的數字不加標記也能過濾有型別的欄位。欄位型別讀不懂的文字會以 `-32602` 拒絕，
+數字、日期、Guid 或 Boolean 欄位收到空字串也一樣，訊息會指出欄位：不要送空字串，請省略該條件，或送 `null` 並設定
+`ignoreIfNull`。`Date` 欄位請送文字或 `wire.dateOnly(...)`，不要傳 JavaScript 的 `Date`：它會以 `toISOString()` 送出，
+換算成 UTC 後可能變成前一天。`DateTime` 欄位把不帶時差的文字當成 UTC，所以在那裡 `2026-11-13` 指的是 UTC 的午夜。
 
 所有訊息型別都以 `Contracts` 匯出（`Contracts.GetListRequest`…），由框架產生。選填成員在 wire 上可能不出現，
 不出現即代表 .NET 的預設值（`0`、`false`、列舉的第一個成員、空 Guid）。
@@ -120,7 +122,8 @@ decimal，沒有辦法另外指定。
 | `Boolean` | `boolean` |
 | `DateTime` | `Date`，以 UTC 解析 |
 | `Date` | `'YYYY-MM-DD'`。日曆日不是時間點，轉成 `Date` 會在某些時區偏移一天 |
-| `Guid`、`Time`、`String`、`Text` | `string` |
+| `Time` | `string`，`HH:mm`。從框架 1.13.0 起，存檔會以這個格式儲存，不是時刻的值以 `-32602` 拒絕 |
+| `Guid`、`String`、`Text` | `string` |
 | `Binary` | `Uint8Array` |
 
 儲存格的 `null` 就是伺服端的 `DBNull`；設定儲存格的函式也接受以 `DB_NULL` 表示它。每列都帶齊所有欄位，
