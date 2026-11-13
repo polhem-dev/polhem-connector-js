@@ -105,6 +105,11 @@ Encrypted call, which is what every call is after `login`. A Plain call refuses 
 a Plain value by its JSON kind alone, so a Guid or a date stays a string there, a number becomes an
 integer or a decimal, and there is no way to say otherwise.
 
+Since framework 1.13.0 a form's list and count filters read a string value as the type of the field it is compared
+with, whatever the call's format, so a date (`yyyy-MM-dd`), a time of day (`HH:mm`), a Guid or a quoted number
+filters a typed column without a marker. Text the field's type cannot read is refused with `-32602`, naming the
+field. For a `Date` field send the date as written rather than `toISOString()`, which moves it to UTC.
+
 Every message type is exported under `Contracts` (`Contracts.GetListRequest`, …), generated from the
 framework. An optional member may be absent on the wire, and absent means the .NET default (`0`,
 `false`, the first enum member, an empty Guid).

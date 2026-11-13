@@ -99,6 +99,10 @@ await client.form('Employee').getList({
 都是。Plain 呼叫會拒絕它們：伺服端只依 JSON 種類綁定 Plain 的值，所以 Guid 或日期在那裡仍是字串，數字會成為整數或
 decimal，沒有辦法另外指定。
 
+從框架 1.13.0 起，不論呼叫採用哪種格式，表單的清單與筆數過濾條件都會依所比對欄位的型別讀取字串值，因此日期
+（`yyyy-MM-dd`）、時刻（`HH:mm`）、Guid 或加了引號的數字不加標記也能過濾有型別的欄位。欄位型別讀不懂的文字會以 `-32602`
+拒絕，訊息會指出欄位。`Date` 欄位請送出原本的日期，不要用 `toISOString()`，它會把日期換算成 UTC。
+
 所有訊息型別都以 `Contracts` 匯出（`Contracts.GetListRequest`…），由框架產生。選填成員在 wire 上可能不出現，
 不出現即代表 .NET 的預設值（`0`、`false`、列舉的第一個成員、空 Guid）。
 
