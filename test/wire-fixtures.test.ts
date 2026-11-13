@@ -11,6 +11,7 @@ import {
   encodeDataTable,
   type DataTable,
 } from '../src/data/data-table.js';
+import { addRow } from '../src/data/edit.js';
 
 /**
  * Verifies this package against the golden samples published by the framework repository.
@@ -166,6 +167,25 @@ describe('wire fixtures', () => {
       expect(modified!.original!['amount']).toBe('10');
       expect(added!.state).toBe('Added');
       expect(added!.original).toBeUndefined();
+    });
+
+    it('decodes a Binary column and a read-only column on a Modified row', () => {
+      const raw = body('datatable') as unknown as Contracts.DataTable;
+      const table = decodeDataTable(raw);
+      const [unchanged, modified, added] = table.rows;
+
+      expect(unchanged!.current!['photo']).toEqual(new Uint8Array([1, 2, 250, 255]));
+      expect(modified!.current!['photo']).toBeNull();
+      // The Binary default is base64: "" is an empty byte array, which a new row starts with.
+      const photo = table.columns.find((c) => c.name === 'photo')!;
+      expect(photo.defaultValue).toBe('');
+      expect(addRow(table, {}).rows.at(-1)!.current!['photo']).toEqual(new Uint8Array());
+
+      // A read-only column still carries a Modified row's original value.
+      expect(table.columns.find((c) => c.name === 'total')!.readOnly).toBe(true);
+      expect(modified!.current!['total']).toBe(5);
+      expect(modified!.original!['total']).toBe(5);
+      expect(added!.current!['total']).toBe(8);
     });
 
     it('decodes the enveloped sample to the same table as the top-level one', () => {
