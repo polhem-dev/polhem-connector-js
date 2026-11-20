@@ -117,6 +117,12 @@ Every message type is exported under `Contracts` (`Contracts.GetListRequest`, â€
 framework. An optional member may be absent on the wire, and absent means the .NET default (`0`,
 `false`, the first enum member, an empty Guid).
 
+Since framework 1.16.0 a form also keeps saved queries: `getUserQueries`, `saveUserQuery`, `deleteUserQuery` and
+`setDefaultUserQuery`. Each needs the form's Read permission, and only a query's creator may overwrite, rename or delete
+it. The server stores the `criteria` text as given; the framework's own list panes write and read it in their own
+format, so a query saved in another format is kept but those panes cannot apply it. `enterCompany` returns
+`userRowId` and `employeeRowId` for a condition on "me".
+
 ### Tables and data sets
 
 `getList` and `getLookup` return a `table`; `getData`, `getNewData` and `save` return a `dataSet`. Both

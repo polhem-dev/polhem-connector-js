@@ -149,6 +149,77 @@ export class FormConnector {
     return this.#call<Contracts.DeleteResponse>('Delete', request, WireTypeNames.DeleteRequest);
   }
 
+  /**
+   * Lists the user queries the caller can apply on this form, and the caller's default.
+   *
+   * A user query is a set of list conditions a user saved under a name, personal or shared with the
+   * company. `table` comes back decoded with the columns `sys_rowid`, `sys_name`, `is_shared`,
+   * `is_own` (whether the caller created it) and `criteria`; the caller's own come first, each group
+   * ordered by name. `defaultRowId` names the query the list opens with, and is absent when there is
+   * none. Needs the form's Read permission; available since framework 1.16.0.
+   */
+  async getUserQueries(
+    request: Decoded<Contracts.GetUserQueriesRequest> = {},
+  ): Promise<Decoded<Contracts.GetUserQueriesResponse>> {
+    const response = await this.#call<Contracts.GetUserQueriesResponse>(
+      'GetUserQueries',
+      request,
+      WireTypeNames.GetUserQueriesRequest,
+    );
+    return withTable(response);
+  }
+
+  /**
+   * Saves a new user query, or overwrites one the caller created.
+   *
+   * Leave `rowId` out to save a new query; the response carries the row id it got. Only the creator
+   * may overwrite, rename or change the sharing of a query. The server stores `criteria` as given
+   * and never reads it; the framework's own list panes write it with `UserQueryCodec`, so text in
+   * another format is kept but those panes cannot apply it. Needs the form's Read permission;
+   * available since framework 1.16.0.
+   */
+  async saveUserQuery(
+    request: Contracts.SaveUserQueryRequest,
+  ): Promise<Contracts.SaveUserQueryResponse> {
+    return this.#call<Contracts.SaveUserQueryResponse>(
+      'SaveUserQuery',
+      request,
+      WireTypeNames.SaveUserQueryRequest,
+    );
+  }
+
+  /**
+   * Deletes a user query the caller created, and clears it as any user's default.
+   *
+   * A query that no longer exists is not an error: `rowsAffected` is then absent, meaning zero.
+   * Needs the form's Read permission; available since framework 1.16.0.
+   */
+  async deleteUserQuery(
+    request: Contracts.DeleteUserQueryRequest,
+  ): Promise<Contracts.DeleteUserQueryResponse> {
+    return this.#call<Contracts.DeleteUserQueryResponse>(
+      'DeleteUserQuery',
+      request,
+      WireTypeNames.DeleteUserQueryRequest,
+    );
+  }
+
+  /**
+   * Sets the user query the caller's list opens with, which may be one another user shares.
+   *
+   * Leave `rowId` out to clear the default. Needs the form's Read permission; available since
+   * framework 1.16.0.
+   */
+  async setDefaultUserQuery(
+    request: Contracts.SetDefaultUserQueryRequest = {},
+  ): Promise<Contracts.SetDefaultUserQueryResponse> {
+    return this.#call<Contracts.SetDefaultUserQueryResponse>(
+      'SetDefaultUserQuery',
+      request,
+      WireTypeNames.SetDefaultUserQueryRequest,
+    );
+  }
+
   #call<T>(action: string, value: unknown, typeName: string): Promise<T> {
     return this.#transport.execute<T>(`${this.#progId}.${action}`, value, { typeName });
   }

@@ -291,6 +291,69 @@ describe('connectors', () => {
     expect(answer.warnings).toEqual({ ref_no: 'Rounded.' });
   });
 
+  it('routes the user query calls and decodes the list of queries', async () => {
+    const table: Contracts.DataTable = {
+      tableName: 'UserQuery',
+      columns: [
+        { name: 'sys_rowid', type: 'Guid', allowNull: false, readOnly: false, maxLength: -1, caption: 'sys_rowid', defaultValue: null },
+        { name: 'sys_name', type: 'String', allowNull: false, readOnly: false, maxLength: 100, caption: 'sys_name', defaultValue: null },
+        { name: 'is_shared', type: 'Boolean', allowNull: false, readOnly: false, maxLength: -1, caption: 'is_shared', defaultValue: null },
+        { name: 'is_own', type: 'Boolean', allowNull: false, readOnly: false, maxLength: -1, caption: 'is_own', defaultValue: null },
+        { name: 'criteria', type: 'String', allowNull: false, readOnly: false, maxLength: -1, caption: 'criteria', defaultValue: null },
+      ],
+      primaryKeys: ['sys_rowid'],
+      rows: [
+        {
+          state: 'Unchanged',
+          current: {
+            sys_rowid: 'aaaaaaaa-0000-0000-0000-000000000001',
+            sys_name: 'Mine this month',
+            is_shared: false,
+            is_own: true,
+            criteria: '<criteria />',
+          },
+        },
+      ],
+    };
+    const rowId = 'aaaaaaaa-0000-0000-0000-000000000001';
+    const answers: Record<string, unknown> = {
+      'Order.GetUserQueries': { table, defaultRowId: rowId },
+      'Order.SaveUserQuery': { rowId },
+      'Order.SetDefaultUserQuery': { defaultRowId: rowId },
+      'Order.DeleteUserQuery': { rowsAffected: 1 },
+    };
+    const { fn, calls } = mockFetch((req) => ({
+      jsonrpc: '2.0',
+      id: req.id,
+      result: { format: PayloadFormat.Plain, value: answers[req.method] },
+    }));
+    const form = clientWith(fn).form('Order');
+
+    const saved = await form.saveUserQuery({ name: 'Mine this month', isShared: false, criteria: '<criteria />' });
+    const listed = await form.getUserQueries();
+    const defaulted = await form.setDefaultUserQuery({ rowId });
+    const deleted = await form.deleteUserQuery({ rowId });
+
+    expect(calls.map((call) => call.method)).toEqual([
+      'Order.SaveUserQuery',
+      'Order.GetUserQueries',
+      'Order.SetDefaultUserQuery',
+      'Order.DeleteUserQuery',
+    ]);
+    // A new query is saved without a row id, which the server reads as the empty Guid.
+    const sent = (await restorePayload(calls[0]!.params, PayloadFormat.Plain)) as Contracts.SaveUserQueryRequest;
+    expect(sent).toEqual({ name: 'Mine this month', isShared: false, criteria: '<criteria />' });
+    expect(saved.rowId).toBe(rowId);
+
+    // The list comes back decoded, like any other table.
+    expect(listed.defaultRowId).toBe(rowId);
+    expect(listed.table!.rows[0]!.current!['is_own']).toBe(true);
+    expect(listed.table!.rows[0]!.current!['sys_name']).toBe('Mine this month');
+
+    expect(defaulted.defaultRowId).toBe(rowId);
+    expect(deleted.rowsAffected).toBe(1);
+  });
+
   it("keeps the user's time zone from login and formats a DateTime in it, not the device's", async () => {
     const { fn } = mockFetch(async (req) =>
       req.method === 'System.Login'

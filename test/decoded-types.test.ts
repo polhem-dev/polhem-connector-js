@@ -30,7 +30,17 @@ type MentionsWire<T, Depth extends unknown[] = []> = T extends WireShape
 
 type Methods = Pick<
   FormConnector,
-  'getList' | 'getData' | 'getNewData' | 'getLookup' | 'fieldValueChange' | 'save' | 'delete'
+  | 'getList'
+  | 'getData'
+  | 'getNewData'
+  | 'getLookup'
+  | 'fieldValueChange'
+  | 'save'
+  | 'delete'
+  | 'getUserQueries'
+  | 'saveUserQuery'
+  | 'deleteUserQuery'
+  | 'setDefaultUserQuery'
 >;
 type Signatures = {
   [K in keyof Methods]: [Parameters<Methods[K]>, Awaited<ReturnType<Methods[K]>>];
@@ -53,6 +63,7 @@ describe('decoded message types', () => {
     assert<Equal<Decoded<Contracts.SaveRequest>['dataSet'], DataSet | undefined>>();
     assert<Equal<Decoded<Contracts.FieldValueChangeRequest>['row'], DataTable | undefined>>();
     assert<Equal<Decoded<Contracts.FieldValueChangeResponse>['values'], DataTable | undefined>>();
+    assert<Equal<Decoded<Contracts.GetUserQueriesResponse>['table'], DataTable | undefined>>();
 
     // Every member stays optional, as on the wire.
     const empty: Decoded<Contracts.GetListResponse> = {};

@@ -172,6 +172,16 @@ export interface DeleteResponse {
   rowsAffected?: number;
 }
 
+export interface DeleteUserQueryRequest {
+  parameters?: Parameter[];
+  rowId?: string;
+}
+
+export interface DeleteUserQueryResponse {
+  parameters?: Parameter[];
+  rowsAffected?: number;
+}
+
 export interface DepartmentNode {
   children?: DepartmentNode[];
   deptId?: string;
@@ -193,7 +203,9 @@ export interface EnterCompanyRequest {
 export interface EnterCompanyResponse {
   capabilities?: Record<string, PermissionActions>;
   company?: CompanyInfo;
+  employeeRowId?: string;
   parameters?: Parameter[];
+  userRowId?: string;
 }
 
 export interface ExecFuncRequest {
@@ -441,6 +453,16 @@ export interface GetTopApiMethodsRequest {
   topN: number;
 }
 
+export interface GetUserQueriesRequest {
+  parameters?: Parameter[];
+}
+
+export interface GetUserQueriesResponse {
+  defaultRowId?: string;
+  parameters?: Parameter[];
+  table?: DataTable;
+}
+
 export interface LeaveCompanyRequest {
   parameters?: Parameter[];
 }
@@ -564,6 +586,19 @@ export interface SaveResponse {
   parameters?: Parameter[];
 }
 
+export interface SaveUserQueryRequest {
+  criteria?: string;
+  isShared?: boolean;
+  name?: string;
+  parameters?: Parameter[];
+  rowId?: string;
+}
+
+export interface SaveUserQueryResponse {
+  parameters?: Parameter[];
+  rowId?: string;
+}
+
 export interface SetApiKeyEnabledRequest {
   enabled?: boolean;
   parameters?: Parameter[];
@@ -586,6 +621,16 @@ export interface SetApiKeyExpiryResponse {
   expiredAt?: string;
   parameters?: Parameter[];
   sysId?: string;
+}
+
+export interface SetDefaultUserQueryRequest {
+  parameters?: Parameter[];
+  rowId?: string;
+}
+
+export interface SetDefaultUserQueryResponse {
+  defaultRowId?: string;
+  parameters?: Parameter[];
 }
 
 export interface SetDeploymentAdminRequest {

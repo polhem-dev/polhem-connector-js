@@ -106,7 +106,13 @@ export class SystemConnector {
     );
   }
 
-  /** Enters a company, scoping subsequent calls to its data. */
+  /**
+   * Enters a company, scoping subsequent calls to its data.
+   *
+   * Since framework 1.16.0 the response also carries `userRowId` and `employeeRowId`, the row ids of
+   * the signed-in user and of the employee linked to them, which a list condition uses for "me".
+   * Either is absent when the server has none to give.
+   */
   async enterCompany(companyId: string): Promise<Contracts.EnterCompanyResponse> {
     return this.#call<Contracts.EnterCompanyResponse>(
       'EnterCompany',
