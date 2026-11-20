@@ -108,6 +108,11 @@ decimal，沒有辦法另外指定。
 所有訊息型別都以 `Contracts` 匯出（`Contracts.GetListRequest`…），由框架產生。選填成員在 wire 上可能不出現，
 不出現即代表 .NET 的預設值（`0`、`false`、列舉的第一個成員、空 Guid）。
 
+自框架 1.16.0 起，表單也能保存查詢：`getUserQueries`、`saveUserQuery`、`deleteUserQuery` 與
+`setDefaultUserQuery`。每個都需要該表單的 Read 權限，且只有查詢的建立者可以覆寫、改名或刪除它。伺服器照原樣儲存
+`criteria` 文字；框架自己的清單查詢窗格以它們自己的格式讀寫，所以用其他格式儲存的查詢會被保留，但這些窗格無法套用。
+`enterCompany` 會回傳 `userRowId` 與 `employeeRowId`，供查詢條件中的「我」使用。
+
 ### 資料表與資料集
 
 `getList` 與 `getLookup` 回傳 `table`；`getData`、`getNewData` 與 `save` 回傳 `dataSet`。兩者抵達時都已解碼：
